@@ -62,6 +62,8 @@ cleanup() {
     rm -f "${STATE_DIR}/${PANE_KEY}.zellij_id"
     rm -f "${STATE_DIR}/${PANE_KEY}.fifo"
     rm -f "${STATE_DIR}/${PANE_KEY}.ready"
+    rm -f "${STATE_DIR}/${PANE_KEY}.group"
+    rm -f "${STATE_DIR}/${PANE_KEY}.named"
 }
 trap cleanup EXIT
 
@@ -95,6 +97,22 @@ if [ -z "$COMMAND" ]; then
     echo "zellij-pane-wrapper: empty command received" >&2
     exit 1
 fi
+
+# Extract agent name and lock the pane title via zellij rename-pane.
+# At this point THIS pane has focus (split-window intentionally leaves focus on
+# the new pane). rename-pane operates on the focused pane AND locks the title,
+# so Claude Code's continuous terminal title resets are permanently ignored.
+AGENT_NAME=""
+if [[ "$COMMAND" =~ --agent-name[[:space:]]+([^[:space:]]+) ]]; then
+    AGENT_NAME="${BASH_REMATCH[1]}"
+    echo "[wrapper] renaming pane to '${AGENT_NAME}' (zellij_pane=${ZELLIJ_PANE_ID:-?})" >> "${STATE_DIR}/shim.log" 2>/dev/null || true
+    zellij action rename-pane "$AGENT_NAME" 2>>"${STATE_DIR}/shim.log" || true
+    echo "[wrapper] rename-pane exit code: $?" >> "${STATE_DIR}/shim.log" 2>/dev/null || true
+fi
+
+# Signal that naming is done — the shim's send-keys handler waits for this
+# before returning focus to the main pane.
+touch "${STATE_DIR}/${PANE_KEY}.named"
 
 # Execute the command.
 # eval preserves printf-%q escaping from serialize_command in the shim.

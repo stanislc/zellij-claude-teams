@@ -128,6 +128,58 @@ wait_for_ready() {
     done
 }
 
+# Stack all agent panes together so they share one visual area on the right.
+# With N agents stacked, the layout is always: [main | stacked agents] — a single
+# split point, which makes move-focus reliable regardless of how many agents exist.
+stack_agent_panes() {
+    local my_group="${ZELLIJ_PANE_ID:-0}"
+    local ids=()
+    local id_file pane_key zid pid_file pid group_file
+    for id_file in "${STATE_DIR}"/*.zellij_id; do
+        [ -f "$id_file" ] || return 0
+        pane_key="${id_file##*/}"
+        pane_key="${pane_key%.zellij_id}"
+        # Only include panes from the same tab (matching caller group)
+        group_file="${STATE_DIR}/${pane_key}.group"
+        [ -f "$group_file" ] && [ "$(cat "$group_file" 2>/dev/null)" = "$my_group" ] || continue
+        # Only include panes that have a live process (skip orphaned state)
+        pid_file="${STATE_DIR}/${pane_key}.pid"
+        [ -f "$pid_file" ] || continue
+        pid=$(cat "$pid_file" 2>/dev/null)
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || continue
+        zid=$(cat "$id_file" 2>/dev/null)
+        [ -n "$zid" ] && [ "$zid" != "unknown" ] && ids+=("$zid")
+    done
+    if [ ${#ids[@]} -ge 2 ]; then
+        zellij action stack-panes -- "${ids[@]}" 2>/dev/null || true
+        log_debug "stack_agent_panes: stacked ${ids[*]}"
+    fi
+}
+
+# Wait for the wrapper to finish renaming the pane.
+# The wrapper touches a .named sentinel after calling rename-pane, which locks
+# the pane title so Claude Code's continuous resets are permanently ignored.
+# Focus is NOT moved here — we let it chain through agents so each new pane
+# is created relative to the previous one (clean vertical layout on the right).
+wait_for_named() {
+    local pane_key="$1"
+    local max_wait=30  # ~3 seconds with 0.1s sleep
+    local i=0
+    while [ ! -f "${STATE_DIR}/${pane_key}.named" ]; do
+        i=$((i + 1))
+        if [ "$i" -ge "$max_wait" ]; then
+            log_debug "wait_for_named: timed out for pane ${pane_key}"
+            break
+        fi
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+}
+
+# Return focus to the main pane (left of agents).
+refocus_main() {
+    zellij action move-focus left 2>/dev/null || true
+}
+
 # Serialize a bash array into a single string preserving argument boundaries.
 # Each element is printf-%q escaped so the wrapper can eval it safely.
 serialize_command() {
@@ -252,6 +304,30 @@ split-window)
     PANE_KEY="${NEW_PANE_ID#%}"
     validate_pane_key "$PANE_KEY" || { log_debug "split-window: invalid pane key"; exit 1; }
 
+    # Tag this pane with the caller's zellij pane ID (for tab-scoped stacking)
+    echo "${ZELLIJ_PANE_ID:-0}" > "${STATE_DIR}/${PANE_KEY}.group"
+
+    # If other living agents exist in this tab, override direction to "down"
+    # so agents stack vertically on the right instead of splitting horizontally.
+    # Focus chains through agents (no intermediate refocus to main), so the
+    # 2nd+ pane is created relative to the previous agent — "down" gives
+    # a clean [main | agent1 / agent2 / agent3] layout.
+    for _gf in "${STATE_DIR}"/*.group; do
+        [ -f "$_gf" ] || continue
+        _gk="${_gf##*/}"; _gk="${_gk%.group}"
+        [ "$_gk" = "$PANE_KEY" ] && continue
+        [ "$(cat "$_gf" 2>/dev/null)" = "${ZELLIJ_PANE_ID:-0}" ] || continue
+        _pp="${STATE_DIR}/${_gk}.pid"
+        [ -f "$_pp" ] || continue
+        _pd=$(cat "$_pp" 2>/dev/null)
+        if [ -n "$_pd" ] && kill -0 "$_pd" 2>/dev/null; then
+            sw_direction="down"
+            # Ensure focus is in the agent column (user may have clicked main).
+            zellij action move-focus right 2>/dev/null || true
+            break
+        fi
+    done
+
     log_debug "split-window: creating pane ${NEW_PANE_ID} direction=${sw_direction}"
 
     # Snapshot env so the wrapper can restore it in the new pane
@@ -269,24 +345,21 @@ split-window)
         exit 1
     fi
 
-    # Return focus to the originating pane (zellij has no --no-focus flag)
-    case "$sw_direction" in
-        right) zellij action move-focus left  2>/dev/null ;;
-        down)  zellij action move-focus up    2>/dev/null ;;
-        left)  zellij action move-focus right 2>/dev/null ;;
-        up)    zellij action move-focus down  2>/dev/null ;;
-    esac
-
     log_debug "split-window: pane ${NEW_PANE_ID} ready"
 
     # If the caller passed a command (not via send-keys), deliver it now
+    # and wait for the wrapper to rename the pane before returning focus.
     if [ ${#sw_command[@]} -gt 0 ]; then
         local_fifo="${STATE_DIR}/${PANE_KEY}.fifo"
         if [ -p "$local_fifo" ]; then
             serialize_command "${sw_command[@]}" > "$local_fifo"
             log_debug "split-window: delivered command to ${NEW_PANE_ID}"
         fi
+        wait_for_named "$PANE_KEY"
     fi
+    # If no inline command, DON'T move focus — the agent pane keeps focus so
+    # the subsequent send-keys → wrapper → rename-pane targets the right pane.
+    # send-keys will move focus back after the rename is locked.
 
     # Print pane ID if -P was given
     if [ "$sw_print" = true ]; then
@@ -351,6 +424,9 @@ send-keys)
         # Wrapper is waiting on the FIFO — deliver the command
         echo "$COMMAND_TEXT" > "$FIFO_PATH"
         log_debug "send-keys: delivered to FIFO"
+        # Wait for the wrapper to rename the pane (locks the title), then
+        # return focus to the main pane.
+        wait_for_named "$PANE_KEY"
     else
         # FIFO doesn't exist — the wrapper has already exec'd into a process.
         # Fall back to zellij write-chars (best effort, focus-dependent).
@@ -401,6 +477,8 @@ kill-pane)
     rm -f "${STATE_DIR}/${PANE_KEY}.zellij_id"
     rm -f "${STATE_DIR}/${PANE_KEY}.fifo"
     rm -f "${STATE_DIR}/${PANE_KEY}.ready"
+    rm -f "${STATE_DIR}/${PANE_KEY}.group"
+    rm -f "${STATE_DIR}/${PANE_KEY}.named"
 
     exit 0
     ;;
@@ -519,6 +597,9 @@ new-window)
 
     log_debug "new-window: creating pane ${NEW_PANE_ID} name=${nw_name}"
 
+    # Tag this pane with the caller's zellij pane ID (for tab-scoped stacking)
+    echo "${ZELLIJ_PANE_ID:-0}" > "${STATE_DIR}/${PANE_KEY}.group"
+
     # Snapshot env so the wrapper can restore it in the new pane
     snapshot_env
 
@@ -535,16 +616,16 @@ new-window)
         exit 1
     fi
 
-    # Return focus to the originating pane (zellij has no --no-focus flag)
-    zellij action move-focus left 2>/dev/null
-
-    # Deliver command if provided
+    # Deliver command if provided, then wait for rename and refocus
     if [ ${#nw_command[@]} -gt 0 ]; then
         local_fifo="${STATE_DIR}/${PANE_KEY}.fifo"
         if [ -p "$local_fifo" ]; then
             serialize_command "${nw_command[@]}" > "$local_fifo"
         fi
+        wait_for_named "$PANE_KEY"
     fi
+    # If no inline command, DON'T move focus — send-keys will handle it
+    # after the wrapper renames the pane.
 
     if [ "$nw_print" = true ]; then
         echo "$NEW_PANE_ID"

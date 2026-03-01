@@ -16,10 +16,12 @@ fi
 # XDG-compliant install directory
 ZELLIJ_TMUX_SHIM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim"
 
-# Runtime state goes in a ephemeral, per-user directory (PIDs, FIFOs, etc.)
+# Runtime state goes in a ephemeral, per-user, per-session directory (PIDs, FIFOs, etc.)
 # XDG_RUNTIME_DIR is /run/user/UID on systemd Linux; TMPDIR is per-user on macOS
+# Scoped by ZELLIJ_SESSION_NAME so multiple zellij sessions don't collide.
 _runtime_base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
-ZELLIJ_TMUX_SHIM_STATE="${_runtime_base}/zellij-tmux-shim-$(id -u)"
+_shim_root="${_runtime_base}/zellij-tmux-shim-$(id -u)"
+ZELLIJ_TMUX_SHIM_STATE="${_shim_root}/${ZELLIJ_SESSION_NAME:-default}"
 unset _runtime_base
 
 # Save real tmux path before we shadow it
@@ -44,19 +46,24 @@ export ZELLIJ_TMUX_SHIM_STATE
 # Initialize state directory — this is the security keystone.
 # FIFOs, eval'd env files, and command delivery all live here.
 # chmod 700 MUST succeed; if it doesn't, the shim is unsafe.
-if [ -L "$ZELLIJ_TMUX_SHIM_STATE" ]; then
-    echo "zellij-tmux-shim: ERROR: state dir is a symlink, refusing to activate" >&2
+# Secure the per-user root directory first, then create the per-session subdir.
+if [ -L "$_shim_root" ]; then
+    echo "zellij-tmux-shim: ERROR: state root is a symlink, refusing to activate" >&2
+    unset _shim_root
     return 1 2>/dev/null || exit 1
 fi
-mkdir -p "$ZELLIJ_TMUX_SHIM_STATE"
-chmod 700 "$ZELLIJ_TMUX_SHIM_STATE"
-# Verify ownership (guards against /tmp race where another user creates the dir first)
-_owner=$(stat -f '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null || stat -c '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null)
+mkdir -p "$_shim_root"
+chmod 700 "$_shim_root"
+_owner=$(stat -f '%u' "$_shim_root" 2>/dev/null || stat -c '%u' "$_shim_root" 2>/dev/null)
 if [ "$_owner" != "$(id -u)" ]; then
-    echo "zellij-tmux-shim: ERROR: state dir not owned by current user" >&2
+    echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2
+    unset _shim_root _owner
     return 1 2>/dev/null || exit 1
 fi
 unset _owner
+# Per-session subdir inherits root's 700 protection
+mkdir -p "$ZELLIJ_TMUX_SHIM_STATE"
+unset _shim_root
 
 # Initialize next_id counter (start at 1, %0 is reserved for the host pane)
 if [ ! -f "$ZELLIJ_TMUX_SHIM_STATE/next_id" ]; then
@@ -80,8 +87,17 @@ command find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.pid' 2>/dev/null | w
               "$ZELLIJ_TMUX_SHIM_STATE/${_key}.zellij_id" \
               "$ZELLIJ_TMUX_SHIM_STATE/${_key}.fifo" \
               "$ZELLIJ_TMUX_SHIM_STATE/${_key}.ready" \
-              "$ZELLIJ_TMUX_SHIM_STATE/${_key}.cmd"
+              "$ZELLIJ_TMUX_SHIM_STATE/${_key}.cmd" \
+              "$ZELLIJ_TMUX_SHIM_STATE/${_key}.named" \
+              "$ZELLIJ_TMUX_SHIM_STATE/${_key}.group"
     fi
+done
+
+# Clean up orphaned .zellij_id files (no matching .pid = dead pane)
+command find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.zellij_id' 2>/dev/null | while IFS= read -r _idfile; do
+    _key="${_idfile##*/}"
+    _key="${_key%.zellij_id}"
+    [ -f "$ZELLIJ_TMUX_SHIM_STATE/${_key}.pid" ] || rm -f "$_idfile"
 done
 
 # Remove stale env snapshot and lock from prior sessions
