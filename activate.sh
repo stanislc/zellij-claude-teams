@@ -69,10 +69,9 @@ if [ ! -f "$ZELLIJ_TMUX_SHIM_STATE/sessions" ]; then
 fi
 
 # Sweep stale state from prior crashed sessions: remove state files
-# for PIDs that no longer exist (the ls guard avoids zsh NOMATCH error on empty glob)
-if ls "$ZELLIJ_TMUX_SHIM_STATE"/*.pid >/dev/null 2>&1; then
-for _pidfile in "$ZELLIJ_TMUX_SHIM_STATE"/*.pid; do
-    [ -f "$_pidfile" ] || continue
+# for PIDs that no longer exist.
+# Uses find instead of a glob to avoid zsh NOMATCH error when no .pid files exist.
+find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.pid' 2>/dev/null | while IFS= read -r _pidfile; do
     _pid=$(cat "$_pidfile" 2>/dev/null)
     if [ -n "$_pid" ] && ! kill -0 "$_pid" 2>/dev/null; then
         _key="${_pidfile##*/}"
@@ -84,8 +83,6 @@ for _pidfile in "$ZELLIJ_TMUX_SHIM_STATE"/*.pid; do
               "$ZELLIJ_TMUX_SHIM_STATE/${_key}.cmd"
     fi
 done
-fi
-unset _pidfile _pid _key
 
 # Remove stale env snapshot and lock from prior sessions
 rm -f "$ZELLIJ_TMUX_SHIM_STATE/parent.env"
