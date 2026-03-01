@@ -322,8 +322,6 @@ split-window)
         _pd=$(cat "$_pp" 2>/dev/null)
         if [ -n "$_pd" ] && kill -0 "$_pd" 2>/dev/null; then
             sw_direction="down"
-            # Ensure focus is in the agent column (user may have clicked main).
-            zellij action move-focus right 2>/dev/null || true
             break
         fi
     done
