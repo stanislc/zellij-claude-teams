@@ -12,13 +12,15 @@ This project provides a **tmux shim** — a fake `tmux` binary that intercepts C
 
 ```
 ┌──────────────────────┬──────────────────────┐
-│                      │  teammate: researcher │
-│   Claude Code        │  (zellij pane)        │
-│   (your session)     ├──────────────────────┤
-│                      │  teammate: coder      │
-│                      │  (zellij pane)        │
+│                      │  researcher           │
+│   Claude Code        ├──────────────────────┤
+│   (your session)     │  implementer          │
+│                      ├──────────────────────┤
+│                      │  tester               │
 └──────────────────────┴──────────────────────┘
 ```
+
+Agent panes are named after their role and stack vertically on the right.
 
 ## Requirements
 
@@ -95,6 +97,14 @@ bash install.sh --uninstall
 |---|---|---|
 | `ZELLIJ_TMUX_SHIM_DEBUG` | unset | Set to `1` to log all tmux calls to `$STATE_DIR/shim.log` |
 
+## Features
+
+- **Pane naming** — each agent pane is titled with its role (researcher, implementer, etc.) via `zellij action rename-pane`, which locks the title so Claude Code's TUI can't override it
+- **Vertical layout** — the first agent splits right; subsequent agents stack below it automatically
+- **Session isolation** — state is scoped by `ZELLIJ_SESSION_NAME`, so multiple Zellij sessions don't collide
+- **Tab isolation** — agent teams in different tabs within the same session are tracked independently via `.group` files
+- **Focus management** — focus chains through agents during creation, with `move-focus right` ensuring correct placement even if you click back to main between spawns
+
 ## How It Works
 
 The shim uses a **FIFO-per-pane** architecture:
@@ -109,11 +119,13 @@ tmux split-window -h ───────→  alloc pane ID (%1)
                                                                wrapper starts
                                                                creates FIFO
                                                                touches .ready
-                               move-focus back ──────────────→ returns focus
                                ← returns %1
 
 tmux send-keys -t %1 "cmd" ─→ write "cmd" to FIFO
                                                                wrapper reads FIFO
+                                                               rename-pane (locks title)
+                                                               touch .named sentinel
+                               wait for .named
                                                                eval "$cmd"
                                                                (cmd runs in pane)
 
@@ -146,7 +158,7 @@ Zellij's `new-pane` does **not** inherit the parent shell's environment (unlike 
 
 ### Agent panes steal focus
 
-The shim automatically returns focus to the originating pane after creating a new one. If you're on an older version, update to the latest.
+Focus chains through agents during creation for correct layout placement. After all agents spawn, click the main pane to return keyboard focus. If you're on an older version, update to the latest.
 
 ### Environment variables missing in panes
 
@@ -162,7 +174,6 @@ cat "${ZELLIJ_TMUX_SHIM_STATE}/shim.log"
 
 ## Known Limitations
 
-- **Single-tab scope** — all agent panes live in the current Zellij tab
 - **No pane resizing** — Zellij manages layout automatically; tmux layout commands are no-ops
 - **Fragile to Claude Code updates** — new tmux commands added upstream may need shim updates. Debug logging captures unhandled commands for diagnosis.
 - **No Fish shell support** — Fish cannot source bash scripts. Use [bass](https://github.com/edc/bass) or contribute a `activate.fish`.
