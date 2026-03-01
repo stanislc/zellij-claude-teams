@@ -54,7 +54,7 @@ if [ -L "$_shim_root" ]; then
 fi
 mkdir -p "$_shim_root"
 chmod 700 "$_shim_root"
-_owner=$(stat -f '%u' "$_shim_root" 2>/dev/null || stat -c '%u' "$_shim_root" 2>/dev/null)
+_owner=$(stat -c '%u' "$_shim_root" 2>/dev/null || stat -f '%u' "$_shim_root" 2>/dev/null)
 if [ "$_owner" != "$(id -u)" ]; then
     echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2
     unset _shim_root _owner
