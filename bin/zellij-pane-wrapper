@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# zellij-pane-wrapper: Runs inside each spawned zellij pane.
+# Receives a synthetic pane ID as $1, registers state, waits for a
+# command on a FIFO, then execs that command.
+#
+# Usage (called by the shim, not directly):
+#   zellij-pane-wrapper <state_dir> <shim_dir> %N
+#
+# Note: args are passed explicitly because zellij new-pane does NOT
+# inherit the calling shell's environment variables.
+
+set -euo pipefail
+
+STATE_DIR="$1"
+SHIM_DIR="$2"
+PANE_ID="$3"
+
+# Restore the parent shell's environment.
+# The tmux shim snapshots env via `export -p` before spawning us, because
+# zellij new-pane does NOT inherit the calling process's environment (unlike tmux).
+# Using eval handles the `declare -x VAR="value"` format and multiline values.
+ENV_FILE="${STATE_DIR}/parent.env"
+if [ -f "$ENV_FILE" ]; then
+    eval "$(cat "$ENV_FILE")" 2>/dev/null || true
+fi
+
+# Override pane-specific vars (these differ per pane)
+export ZELLIJ_TMUX_SHIM_STATE="$STATE_DIR"
+export ZELLIJ_TMUX_SHIM_DIR="$SHIM_DIR"
+export TMUX_PANE="$PANE_ID"
+
+# Clean pane ID for filenames (strip leading %)
+PANE_KEY="${PANE_ID#%}"
+
+# Write zellij's actual pane ID (available as env var inside zellij panes)
+echo "${ZELLIJ_PANE_ID:-unknown}" > "${STATE_DIR}/${PANE_KEY}.zellij_id"
+
+# Write our PID so kill-pane can terminate us
+echo "$$" > "${STATE_DIR}/${PANE_KEY}.pid"
+
+# Create the named FIFO for command delivery
+FIFO_PATH="${STATE_DIR}/${PANE_KEY}.fifo"
+rm -f "$FIFO_PATH"
+mkfifo "$FIFO_PATH"
+
+# Cleanup on exit: remove state files
+cleanup() {
+    rm -f "${STATE_DIR}/${PANE_KEY}.pid"
+    rm -f "${STATE_DIR}/${PANE_KEY}.zellij_id"
+    rm -f "${STATE_DIR}/${PANE_KEY}.fifo"
+    rm -f "${STATE_DIR}/${PANE_KEY}.ready"
+}
+trap cleanup EXIT
+
+# Signal readiness — the shim's split-window handler polls for this
+touch "${STATE_DIR}/${PANE_KEY}.ready"
+
+# Read the command from the FIFO.
+# Uses a background cat + wait with timeout to avoid blocking forever
+# if the shim crashes before delivering the command.
+COMMAND=""
+cat "$FIFO_PATH" > "${STATE_DIR}/${PANE_KEY}.cmd" &
+CAT_PID=$!
+WAIT_SECS=0
+while kill -0 "$CAT_PID" 2>/dev/null; do
+    sleep 1
+    WAIT_SECS=$((WAIT_SECS + 1))
+    if [ "$WAIT_SECS" -ge 300 ]; then
+        # 5 minutes with no command — assume the shim died
+        kill "$CAT_PID" 2>/dev/null || true
+        echo "zellij-pane-wrapper: timed out waiting for command" >&2
+        exit 1
+    fi
+done
+COMMAND=$(cat "${STATE_DIR}/${PANE_KEY}.cmd" 2>/dev/null)
+rm -f "${STATE_DIR}/${PANE_KEY}.cmd"
+
+# Remove the FIFO — it's single-use
+rm -f "$FIFO_PATH"
+
+if [ -z "$COMMAND" ]; then
+    echo "zellij-pane-wrapper: empty command received" >&2
+    exit 1
+fi
+
+# Execute the command.
+# eval preserves printf-%q escaping from serialize_command in the shim.
+# Note: we do NOT use exec here because Claude Code sends compound commands
+# (cd /path && env VAR=val /path/to/binary) and exec only applies to simple
+# commands. The wrapper shell stays as parent — this is fine because the EXIT
+# trap will fire and clean up state files when the command finishes.
+eval "$COMMAND"

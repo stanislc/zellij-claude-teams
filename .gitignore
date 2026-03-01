@@ -1,0 +1,5 @@
+state/
+*.log
+parent.env
+*.cmd
+next_id.lock/

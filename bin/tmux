@@ -1,0 +1,552 @@
+#!/usr/bin/env bash
+# zellij-tmux-shim: Intercepts tmux commands from Claude Code and
+# translates them to zellij equivalents.
+#
+# This script is placed on PATH ahead of real tmux so that any
+# invocation of `tmux <subcommand>` hits this shim first.
+
+set -uo pipefail
+
+STATE_DIR="${ZELLIJ_TMUX_SHIM_STATE:?ZELLIJ_TMUX_SHIM_STATE not set}"
+SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:?ZELLIJ_TMUX_SHIM_DIR not set}"
+
+# ---------------------------------------------------------------------------
+# Debug logging
+# ---------------------------------------------------------------------------
+# Detect date nanosecond support once (GNU date has %N, macOS/BSD do not)
+if date '+%N' 2>/dev/null | grep -q '^[0-9]'; then
+    _SHIM_DATE_FMT='%H:%M:%S.%N'
+else
+    _SHIM_DATE_FMT='%H:%M:%S'
+fi
+
+log_debug() {
+    if [ "${ZELLIJ_TMUX_SHIM_DEBUG:-}" = "1" ]; then
+        echo "[$(date "+$_SHIM_DATE_FMT")] $*" >> "${STATE_DIR}/shim.log"
+    fi
+}
+
+log_debug "tmux called with: $*"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# Atomic increment of next_id using mkdir-based locking (portable; macOS lacks flock)
+alloc_pane_id() {
+    local lockdir="${STATE_DIR}/next_id.lock"
+    local attempts=0
+    while ! mkdir "$lockdir" 2>/dev/null; do
+        attempts=$((attempts + 1))
+        # Stale lock detection: check if the locker PID is still alive
+        if [ "$attempts" -eq 50 ] && [ -d "$lockdir" ]; then
+            local lock_pid
+            lock_pid=$(cat "$lockdir/pid" 2>/dev/null)
+            if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+                log_debug "WARNING: removing stale lock (PID ${lock_pid} dead)"
+                rm -f "$lockdir/pid"
+                rmdir "$lockdir" 2>/dev/null || true
+            fi
+        fi
+        if [ "$attempts" -gt 100 ]; then
+            log_debug "ERROR: could not acquire next_id lock"
+            return 1
+        fi
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+
+    # Record our PID so others can detect stale locks
+    echo "$$" > "$lockdir/pid"
+
+    # Guard: ensure next_id file exists
+    if [ ! -f "${STATE_DIR}/next_id" ]; then
+        echo "1" > "${STATE_DIR}/next_id"
+    fi
+
+    local current
+    current=$(cat "${STATE_DIR}/next_id")
+    echo "$((current + 1))" > "${STATE_DIR}/next_id"
+    rm -f "$lockdir/pid"
+    rmdir "$lockdir"
+
+    echo "%${current}"
+}
+
+# Snapshot current environment to a file for child panes to restore.
+# Called once per session; subsequent calls are no-ops.
+# Uses `export -p` (POSIX) instead of `env -0` (GNU extension).
+# This also correctly handles multiline env values since they stay quoted.
+snapshot_env() {
+    local env_file="${STATE_DIR}/parent.env"
+    if [ -f "$env_file" ]; then
+        return 0
+    fi
+    export -p | grep -v \
+        -e ' ZELLIJ_PANE_ID=' \
+        -e ' TMUX_PANE=' \
+        -e ' _=' \
+        -e ' SHLVL=' \
+        -e ' OLDPWD=' \
+        -e ' PWD=' \
+        > "$env_file" || true
+}
+
+# Wait for a pane's wrapper to signal readiness
+wait_for_ready() {
+    local pane_key="$1"
+    local max_wait=50  # ~5 seconds with fractional sleep, ~50s worst case
+    local i=0
+    while [ ! -f "${STATE_DIR}/${pane_key}.ready" ]; do
+        i=$((i + 1))
+        if [ "$i" -ge "$max_wait" ]; then
+            log_debug "ERROR: timed out waiting for pane ${pane_key} to become ready"
+            return 1
+        fi
+        sleep 0.1 2>/dev/null || sleep 1
+    done
+}
+
+# Serialize a bash array into a single string preserving argument boundaries.
+# Each element is printf-%q escaped so the wrapper can eval it safely.
+serialize_command() {
+    local result=""
+    local arg
+    for arg in "$@"; do
+        if [ -n "$result" ]; then
+            result="$result "
+        fi
+        result="$result$(printf '%q' "$arg")"
+    done
+    echo "$result"
+}
+
+# ---------------------------------------------------------------------------
+# Strip -L/-S <socket> flags (Claude Code may pass them; we ignore them)
+# ---------------------------------------------------------------------------
+ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -L|-S)
+            shift 2 || shift  # skip flag and its argument
+            ;;
+        -L*|-S*)
+            shift  # skip -L<value> or -S<value> (no space)
+            ;;
+        *)
+            ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+# Handle empty invocation
+if [ $# -eq 0 ]; then
+    log_debug "no subcommand, forwarding to real tmux or failing"
+    if [ -n "${ZELLIJ_TMUX_SHIM_REAL_TMUX:-}" ] && [ -x "$ZELLIJ_TMUX_SHIM_REAL_TMUX" ]; then
+        exec "$ZELLIJ_TMUX_SHIM_REAL_TMUX"
+    fi
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+CMD="$1"
+shift
+
+case "$CMD" in
+
+# --- Version ---
+-V)
+    echo "tmux 3.6a"
+    exit 0
+    ;;
+
+# --- display-message ---
+display-message)
+    local_target=""
+    local_format=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) local_target="$2"; shift 2 ;;
+            -p) shift ;;
+            *)  local_format="$1"; shift ;;
+        esac
+    done
+
+    case "$local_format" in
+        '#{pane_id}')
+            echo "${TMUX_PANE:-"%0"}"
+            ;;
+        '#{session_name}:#{window_index}')
+            echo "main:0"
+            ;;
+        '#{session_name}')
+            echo "main"
+            ;;
+        '#{window_index}')
+            echo "0"
+            ;;
+        *)
+            log_debug "display-message: unhandled format '$local_format'"
+            echo "main:0"
+            ;;
+    esac
+    exit 0
+    ;;
+
+# --- split-window ---
+split-window)
+    sw_target=""
+    sw_direction="right"
+    sw_size=""
+    sw_print=false
+    sw_format=""
+    sw_command=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) sw_target="$2"; shift 2 ;;
+            -h) sw_direction="right"; shift ;;
+            -v) sw_direction="down"; shift ;;
+            -l) sw_size="$2"; shift 2 ;;
+            -P) sw_print=true; shift ;;
+            -F) sw_format="$2"; shift 2 ;;
+            -d) shift ;;
+            --)
+                shift
+                sw_command=("$@")
+                break
+                ;;
+            *)
+                sw_command=("$@")
+                break
+                ;;
+        esac
+    done
+
+    # Allocate a synthetic pane ID
+    NEW_PANE_ID=$(alloc_pane_id) || { log_debug "split-window: alloc failed"; exit 1; }
+    PANE_KEY="${NEW_PANE_ID#%}"
+
+    log_debug "split-window: creating pane ${NEW_PANE_ID} direction=${sw_direction}"
+
+    # Snapshot env so the wrapper can restore it in the new pane
+    snapshot_env
+
+    # Build zellij new-pane command
+    zellij_args=(action new-pane --close-on-exit -d "$sw_direction")
+
+    # Launch the wrapper in a new zellij pane.
+    zellij "${zellij_args[@]}" -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$NEW_PANE_ID" &
+
+    # Wait for wrapper to signal readiness (creates .ready sentinel)
+    if ! wait_for_ready "$PANE_KEY"; then
+        log_debug "split-window: pane ${NEW_PANE_ID} failed to become ready"
+        exit 1
+    fi
+
+    # Return focus to the originating pane (zellij has no --no-focus flag)
+    case "$sw_direction" in
+        right) zellij action move-focus left  2>/dev/null ;;
+        down)  zellij action move-focus up    2>/dev/null ;;
+        left)  zellij action move-focus right 2>/dev/null ;;
+        up)    zellij action move-focus down  2>/dev/null ;;
+    esac
+
+    log_debug "split-window: pane ${NEW_PANE_ID} ready"
+
+    # If the caller passed a command (not via send-keys), deliver it now
+    if [ ${#sw_command[@]} -gt 0 ]; then
+        local_fifo="${STATE_DIR}/${PANE_KEY}.fifo"
+        if [ -p "$local_fifo" ]; then
+            serialize_command "${sw_command[@]}" > "$local_fifo"
+            log_debug "split-window: delivered command to ${NEW_PANE_ID}"
+        fi
+    fi
+
+    # Print pane ID if -P was given
+    if [ "$sw_print" = true ]; then
+        echo "$NEW_PANE_ID"
+    fi
+    exit 0
+    ;;
+
+# --- send-keys ---
+send-keys)
+    sk_target=""
+    sk_keys=()
+    sk_send_sigint=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) sk_target="$2"; shift 2 ;;
+            C-c)
+                sk_send_sigint=true
+                shift
+                ;;
+            Enter|C-m)
+                # Enter/C-m are implicit — echo adds a newline to FIFO,
+                # and for write-chars we append one explicitly
+                shift
+                ;;
+            *)
+                sk_keys+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$sk_target" ]; then
+        log_debug "send-keys: no target specified, ignoring"
+        exit 0
+    fi
+
+    PANE_KEY="${sk_target#%}"
+
+    # Handle C-c: send SIGINT to the process in the target pane
+    if [ "$sk_send_sigint" = true ]; then
+        PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
+        if [ -f "$PID_FILE" ]; then
+            pid=$(cat "$PID_FILE")
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                kill -INT "$pid" 2>/dev/null || true
+                log_debug "send-keys: sent SIGINT to PID ${pid}"
+            fi
+        fi
+        # If there are no other keys to send, we're done
+        if [ ${#sk_keys[@]} -eq 0 ]; then
+            exit 0
+        fi
+    fi
+
+    FIFO_PATH="${STATE_DIR}/${PANE_KEY}.fifo"
+    COMMAND_TEXT="${sk_keys[*]}"
+    log_debug "send-keys: target=${sk_target} command='${COMMAND_TEXT}'"
+
+    if [ -p "$FIFO_PATH" ]; then
+        # Wrapper is waiting on the FIFO — deliver the command
+        echo "$COMMAND_TEXT" > "$FIFO_PATH"
+        log_debug "send-keys: delivered to FIFO"
+    else
+        # FIFO doesn't exist — the wrapper has already exec'd into a process.
+        # Fall back to zellij write-chars (best effort, focus-dependent).
+        ZELLIJ_ID_FILE="${STATE_DIR}/${PANE_KEY}.zellij_id"
+        if [ -f "$ZELLIJ_ID_FILE" ]; then
+            log_debug "send-keys: FIFO gone, falling back to write-chars"
+            zellij action write-chars "${COMMAND_TEXT}"$'\n' 2>/dev/null || true
+        else
+            log_debug "send-keys: no FIFO and no zellij_id for ${sk_target}"
+        fi
+    fi
+    exit 0
+    ;;
+
+# --- kill-pane ---
+kill-pane)
+    kp_target=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) kp_target="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [ -z "$kp_target" ]; then
+        log_debug "kill-pane: no target"
+        exit 0
+    fi
+
+    PANE_KEY="${kp_target#%}"
+    log_debug "kill-pane: killing ${kp_target}"
+
+    # Read PID and send SIGTERM
+    PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
+    if [ -f "$PID_FILE" ]; then
+        pid=$(cat "$PID_FILE")
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            log_debug "kill-pane: sent SIGTERM to PID ${pid}"
+        fi
+    fi
+
+    # Clean up state files
+    rm -f "${STATE_DIR}/${PANE_KEY}.pid"
+    rm -f "${STATE_DIR}/${PANE_KEY}.zellij_id"
+    rm -f "${STATE_DIR}/${PANE_KEY}.fifo"
+    rm -f "${STATE_DIR}/${PANE_KEY}.ready"
+
+    exit 0
+    ;;
+
+# --- list-panes ---
+list-panes)
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) shift 2 ;;
+            -F) shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    # Always output the host pane
+    echo "%0"
+
+    # Output all tracked panes (only those with live processes)
+    for pidfile in "${STATE_DIR}"/*.pid; do
+        [ -f "$pidfile" ] || continue
+        basename="${pidfile##*/}"
+        pane_key="${basename%.pid}"
+        echo "%${pane_key}"
+    done
+    exit 0
+    ;;
+
+# --- has-session ---
+has-session)
+    hs_target=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) hs_target="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [ -z "$hs_target" ]; then
+        exit 1
+    fi
+
+    # Fixed-string match to avoid regex metacharacter issues
+    if grep -qxF "$hs_target" "${STATE_DIR}/sessions" 2>/dev/null; then
+        exit 0
+    else
+        exit 1
+    fi
+    ;;
+
+# --- new-session ---
+new-session)
+    ns_name=""
+    ns_detach=false
+    ns_command=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -d) ns_detach=true; shift ;;
+            -s) ns_name="$2"; shift 2 ;;
+            -x|-y) shift 2 ;;
+            --)
+                shift
+                ns_command=("$@")
+                break
+                ;;
+            *)
+                ns_command+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [ -n "$ns_name" ]; then
+        if ! grep -qxF "$ns_name" "${STATE_DIR}/sessions" 2>/dev/null; then
+            echo "$ns_name" >> "${STATE_DIR}/sessions"
+        fi
+        log_debug "new-session: registered session '${ns_name}'"
+    fi
+
+    exit 0
+    ;;
+
+# --- new-window ---
+new-window)
+    nw_target=""
+    nw_name=""
+    nw_print=false
+    nw_format=""
+    nw_command=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) nw_target="$2"; shift 2 ;;
+            -n) nw_name="$2"; shift 2 ;;
+            -P) nw_print=true; shift ;;
+            -F) nw_format="$2"; shift 2 ;;
+            -d) shift ;;
+            --)
+                shift
+                nw_command=("$@")
+                break
+                ;;
+            *)
+                nw_command+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    # Allocate pane ID
+    NEW_PANE_ID=$(alloc_pane_id) || { log_debug "new-window: alloc failed"; exit 1; }
+    PANE_KEY="${NEW_PANE_ID#%}"
+
+    log_debug "new-window: creating pane ${NEW_PANE_ID} name=${nw_name}"
+
+    # Snapshot env so the wrapper can restore it in the new pane
+    snapshot_env
+
+    # Build zellij command
+    zellij_args=(action new-pane --close-on-exit -d right)
+    if [ -n "$nw_name" ]; then
+        zellij_args+=(-n "$nw_name")
+    fi
+
+    zellij "${zellij_args[@]}" -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$NEW_PANE_ID" &
+
+    if ! wait_for_ready "$PANE_KEY"; then
+        log_debug "new-window: pane ${NEW_PANE_ID} failed to become ready"
+        exit 1
+    fi
+
+    # Return focus to the originating pane (zellij has no --no-focus flag)
+    zellij action move-focus left 2>/dev/null
+
+    # Deliver command if provided
+    if [ ${#nw_command[@]} -gt 0 ]; then
+        local_fifo="${STATE_DIR}/${PANE_KEY}.fifo"
+        if [ -p "$local_fifo" ]; then
+            serialize_command "${nw_command[@]}" > "$local_fifo"
+        fi
+    fi
+
+    if [ "$nw_print" = true ]; then
+        echo "$NEW_PANE_ID"
+    fi
+    exit 0
+    ;;
+
+# --- list-windows ---
+list-windows)
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) shift 2 ;;
+            -F) shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    echo "main"
+    exit 0
+    ;;
+
+# --- No-op commands ---
+select-layout|resize-pane|select-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|capture-pane|save-buffer|delete-buffer|wait-for|refresh-client)
+    log_debug "no-op: $CMD $*"
+    exit 0
+    ;;
+
+# --- Fallthrough ---
+*)
+    log_debug "UNHANDLED: $CMD $*"
+    if [ -n "${ZELLIJ_TMUX_SHIM_REAL_TMUX:-}" ] && [ -x "$ZELLIJ_TMUX_SHIM_REAL_TMUX" ]; then
+        log_debug "forwarding to real tmux: $CMD $*"
+        exec "$ZELLIJ_TMUX_SHIM_REAL_TMUX" "$CMD" "$@"
+    fi
+    exit 0
+    ;;
+
+esac
