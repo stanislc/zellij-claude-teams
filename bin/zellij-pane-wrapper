@@ -32,6 +32,14 @@ export TMUX_PANE="$PANE_ID"
 # Clean pane ID for filenames (strip leading %)
 PANE_KEY="${PANE_ID#%}"
 
+# Validate pane key is a non-negative integer (prevents path traversal)
+case "$PANE_KEY" in
+    ''|*[!0-9]*)
+        echo "zellij-pane-wrapper: invalid pane ID: $PANE_ID" >&2
+        exit 1
+        ;;
+esac
+
 # Write zellij's actual pane ID (available as env var inside zellij panes)
 echo "${ZELLIJ_PANE_ID:-unknown}" > "${STATE_DIR}/${PANE_KEY}.zellij_id"
 
@@ -40,8 +48,13 @@ echo "$$" > "${STATE_DIR}/${PANE_KEY}.pid"
 
 # Create the named FIFO for command delivery
 FIFO_PATH="${STATE_DIR}/${PANE_KEY}.fifo"
+# Safety: ensure the path isn't a pre-existing symlink (TOCTOU mitigation)
+if [ -L "$FIFO_PATH" ]; then
+    echo "zellij-pane-wrapper: FIFO path is a symlink, aborting" >&2
+    exit 1
+fi
 rm -f "$FIFO_PATH"
-mkfifo "$FIFO_PATH"
+mkfifo -m 600 "$FIFO_PATH"
 
 # Cleanup on exit: remove state files
 cleanup() {

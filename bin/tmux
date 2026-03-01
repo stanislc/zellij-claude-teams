@@ -32,18 +32,28 @@ log_debug "tmux called with: $*"
 # Helpers
 # ---------------------------------------------------------------------------
 
+# Validate that a pane key is a non-negative integer (prevents path traversal via ../../)
+validate_pane_key() {
+    case "$1" in
+        ''|*[!0-9]*)
+            log_debug "ERROR: invalid pane key: '$1'"
+            return 1
+            ;;
+    esac
+}
+
 # Atomic increment of next_id using mkdir-based locking (portable; macOS lacks flock)
 alloc_pane_id() {
     local lockdir="${STATE_DIR}/next_id.lock"
     local attempts=0
     while ! mkdir "$lockdir" 2>/dev/null; do
         attempts=$((attempts + 1))
-        # Stale lock detection: check if the locker PID is still alive
-        if [ "$attempts" -eq 50 ] && [ -d "$lockdir" ]; then
+        # Stale lock detection: check if the locker PID is still alive (or missing)
+        if [ "$attempts" -ge 50 ] && [ -d "$lockdir" ]; then
             local lock_pid
-            lock_pid=$(cat "$lockdir/pid" 2>/dev/null)
-            if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
-                log_debug "WARNING: removing stale lock (PID ${lock_pid} dead)"
+            lock_pid=$(cat "$lockdir/pid" 2>/dev/null || echo "")
+            if [ -z "$lock_pid" ] || ! kill -0 "$lock_pid" 2>/dev/null; then
+                log_debug "WARNING: removing stale lock (PID '${lock_pid}' dead or missing)"
                 rm -f "$lockdir/pid"
                 rmdir "$lockdir" 2>/dev/null || true
             fi
@@ -65,6 +75,13 @@ alloc_pane_id() {
 
     local current
     current=$(cat "${STATE_DIR}/next_id")
+    # Validate next_id is a non-negative integer (guards against file corruption)
+    case "$current" in
+        ''|*[!0-9]*)
+            log_debug "ERROR: corrupt next_id value: '${current}', resetting to 1"
+            current=1
+            ;;
+    esac
     echo "$((current + 1))" > "${STATE_DIR}/next_id"
     rm -f "$lockdir/pid"
     rmdir "$lockdir"
@@ -81,6 +98,9 @@ snapshot_env() {
     if [ -f "$env_file" ]; then
         return 0
     fi
+    # Write to a temp file, then atomically rename to avoid corruption if
+    # two concurrent split-window calls race past the -f check above.
+    local tmp_file="${env_file}.$$"
     export -p | grep -v \
         -e ' ZELLIJ_PANE_ID=' \
         -e ' TMUX_PANE=' \
@@ -88,7 +108,9 @@ snapshot_env() {
         -e ' SHLVL=' \
         -e ' OLDPWD=' \
         -e ' PWD=' \
-        > "$env_file" || true
+        > "$tmp_file" || true
+    # mv -n: no-clobber — if another process already created the file, discard ours
+    mv -n "$tmp_file" "$env_file" 2>/dev/null || rm -f "$tmp_file"
 }
 
 # Wait for a pane's wrapper to signal readiness
@@ -169,7 +191,7 @@ display-message)
     local_format=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) local_target="$2"; shift 2 ;;
+            -t) local_target="${2:-}"; shift 2 || shift ;;
             -p) shift ;;
             *)  local_format="$1"; shift ;;
         esac
@@ -206,12 +228,12 @@ split-window)
     sw_command=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) sw_target="$2"; shift 2 ;;
+            -t) sw_target="${2:-}"; shift 2 || shift ;;
             -h) sw_direction="right"; shift ;;
             -v) sw_direction="down"; shift ;;
-            -l) sw_size="$2"; shift 2 ;;
+            -l) sw_size="${2:-}"; shift 2 || shift ;;
             -P) sw_print=true; shift ;;
-            -F) sw_format="$2"; shift 2 ;;
+            -F) sw_format="${2:-}"; shift 2 || shift ;;
             -d) shift ;;
             --)
                 shift
@@ -228,6 +250,7 @@ split-window)
     # Allocate a synthetic pane ID
     NEW_PANE_ID=$(alloc_pane_id) || { log_debug "split-window: alloc failed"; exit 1; }
     PANE_KEY="${NEW_PANE_ID#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "split-window: invalid pane key"; exit 1; }
 
     log_debug "split-window: creating pane ${NEW_PANE_ID} direction=${sw_direction}"
 
@@ -279,7 +302,7 @@ send-keys)
     sk_send_sigint=false
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) sk_target="$2"; shift 2 ;;
+            -t) sk_target="${2:-}"; shift 2 || shift ;;
             C-c)
                 sk_send_sigint=true
                 shift
@@ -302,6 +325,7 @@ send-keys)
     fi
 
     PANE_KEY="${sk_target#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "send-keys: invalid pane key"; exit 1; }
 
     # Handle C-c: send SIGINT to the process in the target pane
     if [ "$sk_send_sigint" = true ]; then
@@ -346,7 +370,7 @@ kill-pane)
     kp_target=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) kp_target="$2"; shift 2 ;;
+            -t) kp_target="${2:-}"; shift 2 || shift ;;
             *) shift ;;
         esac
     done
@@ -357,15 +381,18 @@ kill-pane)
     fi
 
     PANE_KEY="${kp_target#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "kill-pane: invalid pane key"; exit 1; }
     log_debug "kill-pane: killing ${kp_target}"
 
-    # Read PID and send SIGTERM
+    # Read PID and send SIGTERM to the process group, falling back to single PID.
+    # The wrapper's eval'd command (e.g. claude) is a child process — killing just
+    # the wrapper could orphan it, so we try the process group first.
     PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
     if [ -f "$PID_FILE" ]; then
         pid=$(cat "$PID_FILE")
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill "$pid" 2>/dev/null || true
-            log_debug "kill-pane: sent SIGTERM to PID ${pid}"
+            kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+            log_debug "kill-pane: sent SIGTERM to PID ${pid} (process group attempted)"
         fi
     fi
 
@@ -382,8 +409,8 @@ kill-pane)
 list-panes)
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) shift 2 ;;
-            -F) shift 2 ;;
+            -t) shift 2 || shift ;;
+            -F) shift 2 || shift ;;
             *) shift ;;
         esac
     done
@@ -391,12 +418,16 @@ list-panes)
     # Always output the host pane
     echo "%0"
 
-    # Output all tracked panes (only those with live processes)
+    # Output tracked panes with live processes (skip %0 — already listed above)
     for pidfile in "${STATE_DIR}"/*.pid; do
         [ -f "$pidfile" ] || continue
         basename="${pidfile##*/}"
         pane_key="${basename%.pid}"
-        echo "%${pane_key}"
+        [ "$pane_key" = "0" ] && continue
+        pid=$(cat "$pidfile" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "%${pane_key}"
+        fi
     done
     exit 0
     ;;
@@ -406,7 +437,7 @@ has-session)
     hs_target=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) hs_target="$2"; shift 2 ;;
+            -t) hs_target="${2:-}"; shift 2 || shift ;;
             *) shift ;;
         esac
     done
@@ -431,8 +462,8 @@ new-session)
     while [ $# -gt 0 ]; do
         case "$1" in
             -d) ns_detach=true; shift ;;
-            -s) ns_name="$2"; shift 2 ;;
-            -x|-y) shift 2 ;;
+            -s) ns_name="${2:-}"; shift 2 || shift ;;
+            -x|-y) shift 2 || shift ;;
             --)
                 shift
                 ns_command=("$@")
@@ -464,10 +495,10 @@ new-window)
     nw_command=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) nw_target="$2"; shift 2 ;;
-            -n) nw_name="$2"; shift 2 ;;
+            -t) nw_target="${2:-}"; shift 2 || shift ;;
+            -n) nw_name="${2:-}"; shift 2 || shift ;;
             -P) nw_print=true; shift ;;
-            -F) nw_format="$2"; shift 2 ;;
+            -F) nw_format="${2:-}"; shift 2 || shift ;;
             -d) shift ;;
             --)
                 shift
@@ -484,6 +515,7 @@ new-window)
     # Allocate pane ID
     NEW_PANE_ID=$(alloc_pane_id) || { log_debug "new-window: alloc failed"; exit 1; }
     PANE_KEY="${NEW_PANE_ID#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "new-window: invalid pane key"; exit 1; }
 
     log_debug "new-window: creating pane ${NEW_PANE_ID} name=${nw_name}"
 
@@ -524,8 +556,8 @@ new-window)
 list-windows)
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) shift 2 ;;
-            -F) shift 2 ;;
+            -t) shift 2 || shift ;;
+            -F) shift 2 || shift ;;
             *) shift ;;
         esac
     done

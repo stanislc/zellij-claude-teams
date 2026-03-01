@@ -41,9 +41,22 @@ export TMUX_PANE="%0"
 export ZELLIJ_TMUX_SHIM_DIR
 export ZELLIJ_TMUX_SHIM_STATE
 
-# Initialize state directory (with restrictive permissions for /tmp fallback)
+# Initialize state directory — this is the security keystone.
+# FIFOs, eval'd env files, and command delivery all live here.
+# chmod 700 MUST succeed; if it doesn't, the shim is unsafe.
+if [ -L "$ZELLIJ_TMUX_SHIM_STATE" ]; then
+    echo "zellij-tmux-shim: ERROR: state dir is a symlink, refusing to activate" >&2
+    return 1 2>/dev/null || exit 1
+fi
 mkdir -p "$ZELLIJ_TMUX_SHIM_STATE"
-chmod 700 "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null || true
+chmod 700 "$ZELLIJ_TMUX_SHIM_STATE"
+# Verify ownership (guards against /tmp race where another user creates the dir first)
+_owner=$(stat -f '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null || stat -c '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null)
+if [ "$_owner" != "$(id -u)" ]; then
+    echo "zellij-tmux-shim: ERROR: state dir not owned by current user" >&2
+    return 1 2>/dev/null || exit 1
+fi
+unset _owner
 
 # Initialize next_id counter (start at 1, %0 is reserved for the host pane)
 if [ ! -f "$ZELLIJ_TMUX_SHIM_STATE/next_id" ]; then
