@@ -12,11 +12,11 @@ This project provides a **tmux shim** — a fake `tmux` binary that intercepts C
 
 ```
 ┌──────────────────────┬──────────────────────┐
-│                      │  researcher           │
+│                      │  researcher          │
 │   Claude Code        ├──────────────────────┤
-│   (your session)     │  implementer          │
+│   (your session)     │  implementer         │
 │                      ├──────────────────────┤
-│                      │  tester               │
+│                      │  tester              │
 └──────────────────────┴──────────────────────┘
 ```
 
