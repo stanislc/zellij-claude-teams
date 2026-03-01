@@ -71,7 +71,7 @@ fi
 # Sweep stale state from prior crashed sessions: remove state files
 # for PIDs that no longer exist.
 # Uses find instead of a glob to avoid zsh NOMATCH error when no .pid files exist.
-find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.pid' 2>/dev/null | while IFS= read -r _pidfile; do
+command find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.pid' 2>/dev/null | while IFS= read -r _pidfile; do
     _pid=$(cat "$_pidfile" 2>/dev/null)
     if [ -n "$_pid" ] && ! kill -0 "$_pid" 2>/dev/null; then
         _key="${_pidfile##*/}"
