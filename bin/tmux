@@ -128,34 +128,6 @@ wait_for_ready() {
     done
 }
 
-# Stack all agent panes together so they share one visual area on the right.
-# With N agents stacked, the layout is always: [main | stacked agents] — a single
-# split point, which makes move-focus reliable regardless of how many agents exist.
-stack_agent_panes() {
-    local my_group="${ZELLIJ_PANE_ID:-0}"
-    local ids=()
-    local id_file pane_key zid pid_file pid group_file
-    for id_file in "${STATE_DIR}"/*.zellij_id; do
-        [ -f "$id_file" ] || return 0
-        pane_key="${id_file##*/}"
-        pane_key="${pane_key%.zellij_id}"
-        # Only include panes from the same tab (matching caller group)
-        group_file="${STATE_DIR}/${pane_key}.group"
-        [ -f "$group_file" ] && [ "$(cat "$group_file" 2>/dev/null)" = "$my_group" ] || continue
-        # Only include panes that have a live process (skip orphaned state)
-        pid_file="${STATE_DIR}/${pane_key}.pid"
-        [ -f "$pid_file" ] || continue
-        pid=$(cat "$pid_file" 2>/dev/null)
-        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || continue
-        zid=$(cat "$id_file" 2>/dev/null)
-        [ -n "$zid" ] && [ "$zid" != "unknown" ] && ids+=("$zid")
-    done
-    if [ ${#ids[@]} -ge 2 ]; then
-        zellij action stack-panes -- "${ids[@]}" 2>/dev/null || true
-        log_debug "stack_agent_panes: stacked ${ids[*]}"
-    fi
-}
-
 # Wait for the wrapper to finish renaming the pane.
 # The wrapper touches a .named sentinel after calling rename-pane, which locks
 # the pane title so Claude Code's continuous resets are permanently ignored.
@@ -173,11 +145,6 @@ wait_for_named() {
         fi
         sleep 0.1 2>/dev/null || sleep 1
     done
-}
-
-# Return focus to the main pane (left of agents).
-refocus_main() {
-    zellij action move-focus left 2>/dev/null || true
 }
 
 # Serialize a bash array into a single string preserving argument boundaries.
@@ -251,7 +218,21 @@ display-message)
 
     case "$local_format" in
         '#{pane_id}')
-            echo "${TMUX_PANE:-"%0"}"
+            if [ -n "$local_target" ]; then
+                case "$local_target" in
+                    %*)
+                        target_key="${local_target#%}"
+                        validate_pane_key "$target_key" || exit 1
+                        echo "$local_target"
+                        ;;
+                    *)
+                        log_debug "display-message: unsupported pane target '$local_target'"
+                        echo "${TMUX_PANE:-"%0"}"
+                        ;;
+                esac
+            else
+                echo "${TMUX_PANE:-"%0"}"
+            fi
             ;;
         '#{session_name}:#{window_index}')
             echo "main:0"
@@ -272,20 +253,17 @@ display-message)
 
 # --- split-window ---
 split-window)
-    sw_target=""
     sw_direction="right"
-    sw_size=""
     sw_print=false
-    sw_format=""
     sw_command=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) sw_target="${2:-}"; shift 2 || shift ;;
+            -t) shift 2 || shift ;;
             -h) sw_direction="right"; shift ;;
             -v) sw_direction="down"; shift ;;
-            -l) sw_size="${2:-}"; shift 2 || shift ;;
+            -l) shift 2 || shift ;;
             -P) sw_print=true; shift ;;
-            -F) sw_format="${2:-}"; shift 2 || shift ;;
+            -F) shift 2 || shift ;;
             -d) shift ;;
             --)
                 shift
@@ -433,7 +411,19 @@ send-keys)
         ZELLIJ_ID_FILE="${STATE_DIR}/${PANE_KEY}.zellij_id"
         if [ -f "$ZELLIJ_ID_FILE" ]; then
             log_debug "send-keys: FIFO gone, falling back to write-chars"
-            zellij action write-chars "${COMMAND_TEXT}"$'\n' 2>/dev/null || true
+            zellij_id=$(cat "$ZELLIJ_ID_FILE" 2>/dev/null)
+            if [ -z "$zellij_id" ] || [ "$zellij_id" = "unknown" ]; then
+                log_debug "send-keys: no usable zellij pane id for ${sk_target}"
+                exit 1
+            fi
+            if ! zellij action focus-pane-id "$zellij_id" 2>/dev/null; then
+                log_debug "send-keys: failed to focus zellij pane ${zellij_id}"
+                exit 1
+            fi
+            if ! zellij action write-chars "${COMMAND_TEXT}"$'\n' 2>/dev/null; then
+                log_debug "send-keys: failed to write chars to ${zellij_id}"
+                exit 1
+            fi
         else
             log_debug "send-keys: no FIFO and no zellij_id for ${sk_target}"
         fi
@@ -535,11 +525,10 @@ has-session)
 # --- new-session ---
 new-session)
     ns_name=""
-    ns_detach=false
     ns_command=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -d) ns_detach=true; shift ;;
+            -d) shift ;;
             -s) ns_name="${2:-}"; shift 2 || shift ;;
             -x|-y) shift 2 || shift ;;
             --)
@@ -566,17 +555,15 @@ new-session)
 
 # --- new-window ---
 new-window)
-    nw_target=""
     nw_name=""
     nw_print=false
-    nw_format=""
     nw_command=()
     while [ $# -gt 0 ]; do
         case "$1" in
-            -t) nw_target="${2:-}"; shift 2 || shift ;;
+            -t) shift 2 || shift ;;
             -n) nw_name="${2:-}"; shift 2 || shift ;;
             -P) nw_print=true; shift ;;
-            -F) nw_format="${2:-}"; shift 2 || shift ;;
+            -F) shift 2 || shift ;;
             -d) shift ;;
             --)
                 shift
