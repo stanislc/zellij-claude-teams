@@ -24,7 +24,7 @@ Agent panes are named after their role and stack vertically on the right.
 
 ## Requirements
 
-- **Zellij** 0.40+ (tested on 0.43.1)
+- **Zellij** 0.40+ (tested on 0.44.1)
 - **Bash** 3.2+ (ships with macOS; Linux has 4+)
 - **Claude Code** with Agent Teams support
 
@@ -103,7 +103,7 @@ bash install.sh --uninstall
 - **Vertical layout** — the first agent splits right; subsequent agents stack below it automatically
 - **Session isolation** — state is scoped by `ZELLIJ_SESSION_NAME`, so multiple Zellij sessions don't collide
 - **Tab isolation** — agent teams in different tabs within the same session are tracked independently via `.group` files
-- **Focus management** — focus chains through agents during creation, with `move-focus right` ensuring correct placement even if you click back to main between spawns
+- **Focus management** — focus chains through agents during creation, and late `send-keys` delivery focuses the recorded Zellij pane before writing
 
 ## How It Works
 
@@ -170,6 +170,14 @@ Ensure the shim is activated in your shell (check `echo $ZELLIJ_TMUX_SHIM_ACTIVE
 export ZELLIJ_TMUX_SHIM_DEBUG=1
 # Use Claude Code normally, then inspect:
 cat "${ZELLIJ_TMUX_SHIM_STATE}/shim.log"
+```
+
+## Development
+
+```bash
+bash tests/run.sh
+bash -n activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh
+shellcheck activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh
 ```
 
 ## Known Limitations

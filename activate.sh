@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2317
 # Source this file to activate the zellij-tmux-shim.
 # Usage: source activate.sh
 
 # Guard: only activate inside zellij
-if [ -z "$ZELLIJ" ]; then
+if [ -z "${ZELLIJ:-}" ]; then
     echo "zellij-tmux-shim: not inside zellij, skipping activation" >&2
     return 1 2>/dev/null || exit 1
 fi
@@ -11,8 +12,13 @@ fi
 # Guard: don't double-activate — but always re-ensure PATH priority.
 # Child shells inherit ZELLIJ_TMUX_SHIM_ACTIVE but rebuild PATH from
 # shell config, pushing the shim behind other entries (brew, cargo, etc.).
-if [ -n "$ZELLIJ_TMUX_SHIM_ACTIVE" ]; then
-    export PATH="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}/bin:${PATH}"
+if [ -n "${ZELLIJ_TMUX_SHIM_ACTIVE:-}" ]; then
+    _shim_bin="${ZELLIJ_TMUX_SHIM_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim}/bin"
+    _first_path_component="${PATH%%:*}"
+    if [ "$_first_path_component" != "$_shim_bin" ]; then
+        export PATH="${_shim_bin}:${PATH}"
+    fi
+    unset _shim_bin _first_path_component
     return 0 2>/dev/null || exit 0
 fi
 
@@ -24,7 +30,13 @@ ZELLIJ_TMUX_SHIM_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim"
 # Scoped by ZELLIJ_SESSION_NAME so multiple zellij sessions don't collide.
 _runtime_base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}"
 _shim_root="${_runtime_base}/zellij-tmux-shim-$(id -u)"
-ZELLIJ_TMUX_SHIM_STATE="${_shim_root}/${ZELLIJ_SESSION_NAME:-default}"
+ZELLIJ_TMUX_SHIM_ROOT="$_shim_root"
+_session_raw="${ZELLIJ_SESSION_NAME:-default}"
+_session_slug=$(printf '%s' "$_session_raw" | tr -c '[:alnum:]_-' '-' | sed 's/^-*//; s/-*$//; s/--*/-/g' | cut -c 1-48)
+[ -n "$_session_slug" ] || _session_slug="default"
+_session_hash=$(printf '%s' "$_session_raw" | cksum | awk '{print $1}')
+ZELLIJ_TMUX_SHIM_STATE="${_shim_root}/${_session_slug}-${_session_hash}"
+unset _session_raw _session_slug _session_hash
 unset _runtime_base
 
 # Save real tmux path before we shadow it
@@ -44,6 +56,7 @@ export TMUX_PANE="%0"
 
 # Export state dir for shim scripts
 export ZELLIJ_TMUX_SHIM_DIR
+export ZELLIJ_TMUX_SHIM_ROOT
 export ZELLIJ_TMUX_SHIM_STATE
 
 # Initialize state directory — this is the security keystone.
@@ -55,8 +68,16 @@ if [ -L "$_shim_root" ]; then
     unset _shim_root
     return 1 2>/dev/null || exit 1
 fi
-mkdir -p "$_shim_root"
-chmod 700 "$_shim_root"
+if ! mkdir -p "$_shim_root"; then
+    echo "zellij-tmux-shim: ERROR: failed to create state root" >&2
+    unset _shim_root
+    return 1 2>/dev/null || exit 1
+fi
+if ! chmod 700 "$_shim_root"; then
+    echo "zellij-tmux-shim: ERROR: failed to secure state root" >&2
+    unset _shim_root
+    return 1 2>/dev/null || exit 1
+fi
 _owner=$(stat -c '%u' "$_shim_root" 2>/dev/null || stat -f '%u' "$_shim_root" 2>/dev/null)
 if [ "$_owner" != "$(id -u)" ]; then
     echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2
@@ -65,7 +86,31 @@ if [ "$_owner" != "$(id -u)" ]; then
 fi
 unset _owner
 # Per-session subdir inherits root's 700 protection
-mkdir -p "$ZELLIJ_TMUX_SHIM_STATE"
+case "$ZELLIJ_TMUX_SHIM_STATE" in
+    "$_shim_root"/*) ;;
+    *)
+        echo "zellij-tmux-shim: ERROR: state dir escaped state root" >&2
+        unset _shim_root
+        return 1 2>/dev/null || exit 1
+        ;;
+esac
+if ! mkdir -p "$ZELLIJ_TMUX_SHIM_STATE"; then
+    echo "zellij-tmux-shim: ERROR: failed to create state dir" >&2
+    unset _shim_root
+    return 1 2>/dev/null || exit 1
+fi
+if ! chmod 700 "$ZELLIJ_TMUX_SHIM_STATE"; then
+    echo "zellij-tmux-shim: ERROR: failed to secure state dir" >&2
+    unset _shim_root
+    return 1 2>/dev/null || exit 1
+fi
+_owner=$(stat -c '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null || stat -f '%u' "$ZELLIJ_TMUX_SHIM_STATE" 2>/dev/null)
+if [ "$_owner" != "$(id -u)" ]; then
+    echo "zellij-tmux-shim: ERROR: state dir not owned by current user" >&2
+    unset _shim_root _owner
+    return 1 2>/dev/null || exit 1
+fi
+unset _owner
 unset _shim_root
 
 # Initialize next_id counter (start at 1, %0 is reserved for the host pane)
