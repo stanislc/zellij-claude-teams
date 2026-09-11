@@ -96,11 +96,14 @@ bash install.sh --uninstall
 | Variable | Default | Description |
 |---|---|---|
 | `ZELLIJ_TMUX_SHIM_DEBUG` | unset | Set to `1` to log all tmux calls to `$STATE_DIR/shim.log` |
+| `ZELLIJ_SHIM_LAYOUT` | unset (Claude's `-h`→right, `-v`→down) | Pin the base split direction for agent panes: `right` or `down`. Overrides the `-h`/`-v` flag Claude Code passes, so every agent pane spawns in the pinned direction. The "stack 2nd+ agents vertically" rule still applies once siblings exist. |
 
 ## Features
 
 - **Pane naming** — each agent pane is titled with its role (researcher, implementer, etc.) via `zellij action rename-pane`, which locks the title so Claude Code's TUI can't override it
 - **Vertical layout** — the first agent splits right; subsequent agents stack below it automatically
+- **`capture-pane` support** — `tmux capture-pane -p -t <pane>` is translated to `zellij action dump-screen --full`, so agents that read pane scrollback/history work instead of hitting a no-op
+- **Process-group interrupts** — `send-keys -t <pane> C-c` sends SIGINT to the pane's process group (not just the wrapper's direct child), matching `kill-pane` behavior so spawned sub-processes are also interrupted
 - **Session isolation** — state is scoped by `ZELLIJ_SESSION_NAME`, so multiple Zellij sessions don't collide
 - **Tab isolation** — agent teams in different tabs within the same session are tracked independently via `.group` files
 - **Focus management** — focus chains through agents during creation, with `move-focus right` ensuring correct placement even if you click back to main between spawns

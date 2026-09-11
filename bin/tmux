@@ -273,7 +273,14 @@ display-message)
 # --- split-window ---
 split-window)
     sw_target=""
-    sw_direction="right"
+    # Default split direction. Override with ZELLIJ_SHIM_LAYOUT=down|right to
+    # change the base orientation of spawned agent panes. The "stack 2nd+ agent
+    # vertically" logic below still forces 'down' once siblings exist.
+    case "${ZELLIJ_SHIM_LAYOUT:-right}" in
+        down)  sw_direction="down" ;;
+        right) sw_direction="right" ;;
+        *)     sw_direction="right" ;;
+    esac
     sw_size=""
     sw_print=false
     sw_format=""
@@ -298,6 +305,14 @@ split-window)
                 ;;
         esac
     done
+
+    # Env override wins over the -h/-v mapping above: if the user pins a layout
+    # via ZELLIJ_SHIM_LAYOUT, every spawned agent pane uses it regardless of the
+    # direction Claude Code requested.
+    case "${ZELLIJ_SHIM_LAYOUT:-}" in
+        down)  sw_direction="down" ;;
+        right) sw_direction="right" ;;
+    esac
 
     # Allocate a synthetic pane ID
     NEW_PANE_ID=$(alloc_pane_id) || { log_debug "split-window: alloc failed"; exit 1; }
@@ -400,14 +415,19 @@ send-keys)
     PANE_KEY="${sk_target#%}"
     validate_pane_key "$PANE_KEY" || { log_debug "send-keys: invalid pane key"; exit 1; }
 
-    # Handle C-c: send SIGINT to the process in the target pane
-    if [ "$sk_send_sigint" = true ]; then
+    # Handle C-c: send SIGINT to the target pane's process group, so child
+    # processes spawned by the agent (e.g. sub-shells, build tools) are also
+    # interrupted — not just the wrapper's direct child. Mirrors kill-pane.
+    if [ "$***" = true ]; then
         PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
         if [ -f "$PID_FILE" ]; then
             pid=$(cat "$PID_FILE")
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                kill -INT "$pid" 2>/dev/null || true
-                log_debug "send-keys: sent SIGINT to PID ${pid}"
+                # Try the process group first (negated pid), fall back to the
+                # single PID. The wrapper execs the command via eval, so the
+                # command may not be a session leader — group kill is best effort.
+                kill -INT -- -"$pid" 2>/dev/null || kill -INT "$pid" 2>/dev/null || true
+                log_debug "send-keys: sent SIGINT to PID ${pid} (process group attempted)"
             fi
         fi
         # If there are no other keys to send, we're done
@@ -646,8 +666,50 @@ list-windows)
     exit 0
     ;;
 
+# --- capture-pane ---
+# tmux capture-pane copies the pane's visible content (or scrollback with -S/-E)
+# to stdout (-p) or a buffer. zellij exposes pane content via `action dump-screen`
+# (--full includes scrollback). We translate the target pane and ignore range
+# flags zellij does not model (-S/-E/-b), which is acceptable for agent use.
+capture-pane)
+    cp_target=""
+    cp_print=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) cp_target="${2:-}"; shift 2 || shift ;;
+            -p) cp_print=true; shift ;;
+            -S|-E|-b) shift 2 || shift ;;
+            *) shift ;;
+        esac
+    done
+
+    if [ -z "$cp_target" ]; then
+        cp_target="${TMUX_PANE:-%0}"
+    fi
+    PANE_KEY="${cp_target#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "capture-pane: invalid pane key"; exit 1; }
+
+    ZID_FILE="${STATE_DIR}/${PANE_KEY}.zellij_id"
+    if [ ! -f "$ZID_FILE" ]; then
+        log_debug "capture-pane: no zellij id for ${cp_target}"
+        exit 0
+    fi
+    zid=$(cat "$ZID_FILE" 2>/dev/null)
+    if [ -z "$zid" ] || [ "$zid" = "unknown" ]; then
+        log_debug "capture-pane: zellij id unknown for ${cp_target}"
+        exit 0
+    fi
+
+    # dump-screen prints pane content (full scrollback) to stdout.
+    out=$(zellij action dump-screen --full --pane-id "$zid" 2>/dev/null)
+    if [ "$cp_print" = true ]; then
+        printf '%s\n' "$out"
+    fi
+    exit 0
+    ;;
+
 # --- No-op commands ---
-select-layout|resize-pane|select-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|capture-pane|save-buffer|delete-buffer|wait-for|refresh-client)
+select-layout|resize-pane|select-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|save-buffer|delete-buffer|wait-for|refresh-client)
     log_debug "no-op: $CMD $*"
     exit 0
     ;;
