@@ -1,184 +1,161 @@
 # Repository Cleanup Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Delegate only if the user requests parallel agent work.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Checkboxes track development, which has not started. Follow the active task's delegation rules and assign nonoverlapping file ownership for parallel work.
 
-**Goal:** Preserve the working #8/#9 startup and placement changes, complete safe command delivery and shared state handling, and reconcile the remaining PRs through independently verifiable changes.
+**Goal:** Preserve #8/#9, complete safe command delivery and state handling, integrate fish, and account for each remaining contribution in reviewable stages.
 
-**Architecture:** Retain the small Bash shim and FIFO-per-pane wrapper. Centralize only the command, capability, and state rules that must agree across handlers or shells. Keep the existing installation layout and make each integration produce a testable repository state.
+**Architecture:** Keep the Bash/FIFO adapter and introduce one shared state helper, v2 runtime records, supervised command execution, and independent Zellij capability probes. The [detailed design](../specs/2026-09-14-repository-cleanup-design.md) governs implementation. The [acceptance matrix](../specs/2026-09-14-repository-cleanup-acceptance.md) defines test IDs and exact outcomes.
 
-**Tech Stack:** Bash 3.2+, zsh, Zellij CLI, optional fish, ShellCheck, a Bash regression harness with fake Zellij and real wrapper processes, GitHub Actions on macOS and Ubuntu.
+**Tech Stack:** Bash 3.2/current Bash, actual zsh, optional fish, Zellij CLI, standard macOS/Linux utilities, ShellCheck, GitHub Actions. Python is test tooling only.
 
 ---
 
-## Evidence and scope
+## Before development
 
-Read the [review and observations](../reviews/2026-09-14-pr-audit.md) first. The reviewed main is `93ed788`; local `maint/claude-code-2.1-compat` now contains it at `8e4e33d`. The earlier design remains in history but its pending-respawn, issue-closure, and no-live-Zellij assumptions are superseded.
+Begin from the current documentation head on local `maint/claude-code-2.1-compat`, containing production main `93ed788`, local integration `8e4e33d`, and first audit/plan commit `80beff5`. Read [START HERE](../START-HERE.md) for the fresh-task prompt. Do not begin from the superseded August commit.
 
-This pass delivered the analysis and this plan. Implementation below is the proposed next work. No extra feature PR has been merged or edited on GitHub.
+- [ ] Inspect status and refs; preserve `.serena/` and unrelated changes.
+- [ ] Fetch origin and relevant PR heads, compare them with the audit's exact hashes, and re-review changed contributions.
+- [ ] Create/reuse a `stan/` integration branch carrying these documents; incorporate updated origin/main without discarding planning history or overwriting unrelated branch work.
+- [ ] Confirm the implementation task's requested endpoint: local verified commits, draft PR, or another explicit delivery. Planning authorizes no remote publication or reconciliation.
+- [ ] Create `docs/verification/repository-stabilization.md` for new results. Do not rewrite the historical audit JSON to imply fixes were already tested.
 
-Use staged consolidation. A minimal late-input patch alone would leave the duplicated hardening and cross-shell state mismatch unresolved. A larger rewrite would discard useful working behavior and expand the review surface. The existing architecture is sufficient for this maintenance cycle.
+## Dependencies and integration boundaries
 
-Work in three reviewable integrations:
-
-1. **Core stabilization:** tasks 1–4, incorporating shared #2/#5 work once.
-2. **Fish:** task 5, based on the stabilized core and preserving #7 attribution.
-3. **Additional capabilities:** task 6, taking #6's concerns separately.
-
-Repository reconciliation and documentation finish each integration. Do not combine all four open PR heads into one unreviewed merge. No release tag is planned.
-
-## Files and responsibilities
-
-| File | Responsibility |
-|---|---|
-| `bin/tmux` | Parse supported tmux calls, validate targets, serialize launches, route Zellij operations |
-| `bin/zellij-pane-wrapper` | Restore launch environment, receive one command, name the pane, manage process/state lifetime |
-| `activate.sh`, `deactivate.sh` | Bash/zsh environment setup and safe state lifecycle |
-| `activate.fish`, `deactivate.fish` | Equivalent fish contract when #7 lands |
-| `functions/claude-zellij.fish` | Optional child-shell activation wrapper from #7 |
-| `install.sh`, `install.fish` | Explicit, testable installation and removal under XDG paths |
-| `tests/run.sh` | Test entry point and outcome reporting |
-| `tests/helpers/fake-zellij` | Capability profiles, argument logs, real wrapper launch, injected failures |
-| `tests/compat.sh`, `tests/state.sh`, `tests/fish.sh` | Protocol/targeting, state/shell lifecycle, and fish integration tests |
-| `.github/workflows/test.yml` | Required cross-platform regression jobs |
-| `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` | Supported behavior, reproducible checks, contribution rules, unreleased changes |
-
-Do not extract a large framework. Add a shared state helper only if direct duplication would prevent bash and fish from using the same canonical algorithm; if introduced, it must be installed with the shim and tested from an installed copy.
-
-## Task 1: Capture the passing compatibility baseline
-
-**Files:** Create `tests/run.sh`, `tests/helpers/fake-zellij`, `tests/compat.sh`.
-
-- [ ] Record the starting commit and clean tracked-file state. Keep local `.serena/` out of staging. Use a `stan/` branch for a new integration branch if one is needed.
-- [ ] Reuse the assertion/runner ideas from #2, but create a capability-aware fake that actually starts `bin/zellij-pane-wrapper`; its old fake only creates sentinel files and is insufficient to prove command execution. The review-only probe demonstrates the required boundary.
-- [ ] Give every case a fresh temporary root, a minimal child environment, a bounded timeout, and cleanup limited to processes and files created by that case. Do not capture the developer's real exported environment into fixtures.
-- [ ] Add the following successful baseline cases with output assertions: deferred `split-window -- cat`; deferred `new-window -- cat`; legacy inline argv with spaces; split then FIFO send-keys; exact synthetic stdout; title precedence; two sibling agents; another leader group; killing one agent leaves another alive; rejected respawn after FIFO consumption.
-- [ ] Exercise three capability profiles: neither targeted feature, no-focus only, and both no-focus plus targeted rename. The middle profile must take the legacy branch and preserve `new-window -n` naming.
-
-The deferred-start case must drive this sequence, with its command writing a marker under the test root and remaining alive until cleanup:
-
-```bash
-"$shim" -S "$test_root/socket" split-window -d -t %0 -h -l 70% -P -F '#{pane_id}' -- cat
-"$shim" select-pane -t %1 -T researcher
-"$shim" set-option -p -t %1 remain-on-exit failed
-"$shim" respawn-pane -k -t %1 -- "$test_command"
+```text
+M0 baseline harness + minimal CI
+ -> M1 immediate routing/parser fixes
+ -> M2a shared helper and isolated tests
+ -> M2b atomic v2 driver/wrapper/shell cutover
+ -> M2c lifecycle and terminal controls
+ -> M3 core integration gate
+      -> M4 fish
+      -> M5 capture and layout, independently reviewable
+ -> M6 contribution reconciliation after replacement merges
 ```
 
-Required assertions: split prints exactly `%1`; no command or naming sentinel exists before respawn; the marker contains the expected bytes; first creation uses the leader ID; second uses the first live agent ID with direction down; a different leader uses its own ID with direction right.
+M1 is an interim correctness patch, not the final stabilized core. Wire the v2 state and framed sender/receiver together in M2b; never deploy half the transition. Interim tests use fresh isolated state, and hot upgrades remain unsupported.
 
-- [ ] Run `/bin/bash tests/run.sh` on macOS and `bash tests/run.sh` with the newer Bash. Both must pass before committing `test: cover legacy and deferred teammate startup`.
+The interrupt portion of #6 moves into its own core commit in M2c because supervised execution must preserve terminal control. Capture/layout remain later independent capabilities. Fish depends on the frozen core state and installation interfaces.
 
-## Task 2: Complete pane targeting and launch semantics
+## M0: Passing compatibility baseline and minimal CI
 
-**Files:** Modify `bin/tmux`, `tests/helpers/fake-zellij`, `tests/compat.sh`.
+**Files:** Create `tests/run.sh`, `tests/helpers/fake-zellij`, `tests/compat.sh`, `.github/workflows/test.yml`, and the verification ledger.
 
-- [ ] Add a failing test for FIFO-less `send-keys`: target `%7`, recorded Zellij ID `107`, and focus in another pane. Assert that the action names `107`, never uses an untargeted write on the modern profile, and does not change focus there.
-- [ ] Add injected failures for missing/unknown IDs, failure to focus on legacy Zellij, and failure to write. Return nonzero, and never continue to a write after focus failure.
-- [ ] Read and validate the recorded ID. Probe `write-chars --help` for `--pane-id` separately from the creation/rename capability, then dispatch along this structure:
+- [ ] Implement runner selection/reporting, argument-preserving logs, watchdog cleanup, and independent capability profiles from the acceptance matrix.
+- [ ] Reuse #2's assertion ideas, but launch the actual wrapper from fake Zellij. Archived audit sources are references, not an unmodified maintained test suite.
+- [ ] Add exactly these passing baseline cases: `protocol.deferred-split`, `protocol.deferred-window`, `protocol.inline-argv`, `protocol.fifo-send`, `protocol.synthetic-stdout`, `protocol.recorded-title`, `placement.first-leader`, `placement.next-live-sibling`, `placement.other-leader-anchor`, and `placement.capability-gate`. Full title/placeholder semantics and group-scoped listing enter at their fix milestones. Do not hide future failures as skipped baseline checks.
+- [ ] Add Ubuntu/current Bash and macOS/system Bash 3.2/current Bash jobs. Enforce the selected interpreter in both shim and wrapper. Run syntax per file and PR base-to-head whitespace validation; report known ShellCheck baseline findings until the clean M3 gate.
+- [ ] Run baseline locally, record versions/results, and commit `test: establish teammate protocol baseline and CI`.
 
-```bash
-if zellij action write-chars --help 2>/dev/null | grep -q -- '--pane-id'; then
-    zellij action write-chars --pane-id "$zellij_id" "${COMMAND_TEXT}"$'\n' || exit 1
-else
-    zellij action focus-pane-id "$zellij_id" || exit 1
-    zellij action write-chars "${COMMAND_TEXT}"$'\n' || exit 1
-fi
-```
+**Gate:** Every implemented baseline case passes. Creating mock sentinels without executing the wrapper cannot satisfy the gate. Missing required interpreters fail their jobs.
 
-Do not equate support for `rename-pane --pane-id` with support for targeted text writes. Do not blindly apply the old hardening fallback to modern Zellij.
+## M1: Immediate late-input and parser correctness
 
-- [ ] Add a target-aware `display-message -p '#{pane_id}' -t %N` test and incorporate #2's validated-target handling.
-- [ ] Test a single compound command string separately from multiple literal arguments. For the latter, `printf %s 'two words'` must produce `two words`. Include an executable path containing spaces, empty arguments, shell metacharacters passed as data, and payload arguments named `-S` and `-L`.
-- [ ] Stop stripping global socket options once the tmux subcommand is reached. Payload options must reach the handler unchanged. Use one command encoder for split/new-window/respawn, after the exact single-argument `cat` placeholder check:
+**Files:** Driver, compatibility tests, fake Zellij.
 
-```bash
-encode_launch_command() {
-    if [ "$#" -eq 1 ]; then
-        printf '%s\n' "$1"
-    else
-        serialize_command "$@"
-    fi
-}
-```
+- [ ] Reproduce targeted-late-write, legacy focus/write failure, display-target ordering, independent help probes, and payload socket-option cases.
+- [ ] Implement targeted text writes with validated legacy focus fallback and failure propagation. Never retry a failed targeted operation against focus.
+- [ ] Restrict global socket parsing to the prefix, retain query/control option ordering, explicitly reject unsupported input, and preserve documented compatibility no-ops.
+- [ ] Separate raw single-string assignment from literal argv encoded with `command --` and `%q`. Verify spaces, empty arguments, metacharacters, and command-like argv[0]. Exact trailing-byte transport and durable acceptance belong to M2b.
+- [ ] Use current-format target validation for this intermediate patch; full nonce/birth/schema identity becomes mandatory at M2b. Do not invent automatic legacy-state migration.
+- [ ] Run baseline/new cases. Commit parser/encoding and targeting changes separately when each leaves tests passing.
 
-This preserves the single-string shell program and uses the existing `%q` serializer for literal argv. The [tmux command contract](https://man.openbsd.org/tmux#COMMANDS) makes that distinction. The prior August instruction to preserve unquoted `&&` tokens in all multi-argument calls must not override it.
+**Gate:** The reproduced wrong-tab text-write bug is fixed on targeted backends, and payload options are preserved. Legacy focus limitations remain explicit.
 
-- [ ] Return nonzero for a missing respawn target, empty command, absent FIFO, or already consumed FIFO. Add tests for each and for an invalid synthetic target. Use `printf '%s\n'` for FIFO writes so command text is not interpreted as echo options.
-- [ ] Keep command delivery bounded when a FIFO exists without a living reader. Add a dead-wrapper fixture and a timeout assertion; verify any timeout path removes only state owned by that failed spawn.
-- [ ] Run the full suite on both Bash versions and the disposable attached two-tab live scenario. Confirm that the late marker appears only in the target agent. Commit `fix: target pane input and preserve launch arguments`.
+## M2a: Shared state helper in isolation
 
-## Task 3: Consolidate #2/#5 state hardening and close lifecycle gaps
+**Files:** Create `libexec/zellij-shim-state`, `tests/state.sh`; extend runner/fixtures.
 
-**Files:** Modify `activate.sh`, `deactivate.sh`, `bin/zellij-pane-wrapper`; create `tests/state.sh`; extend `tests/run.sh`. Add `bin/tmux` changes only where required for allocation/snapshot lifecycle.
+- [ ] Implement the sourceable/CLI boundary with `prepare`, `validate`, and `close`; sourcing must not alter caller shell state.
+- [ ] Implement canonical v2 paths, slug/checksum/bytecount, raw-session collision checks, private object validation, and path restrictions.
+- [ ] Implement metadata/group/focus mutexes separately from durable claims. Enforce lock order, bounded acquisition, matching-token release, and no automatic stealing.
+- [ ] Implement monotonic reservation/phase operations, corruption/overflow rejection, process identity validation, owned-file cleanup, and receipt retirement.
+- [ ] Test namespace/containment, concurrent allocation, pause-before-owner publication, identity mismatch, terminal receipt records, and rejected cleanup paths.
+- [ ] Commit `feat: define shared v2 state operations`. Production continues using its old state until the coherent cutover; this helper-only commit changes no installed runtime contract.
 
-- [ ] Use #2 as the canonical hardening source and retain attribution. The #5 tree is identical, so do not apply both. Resolve its `bin/tmux` conflict while preserving tasks 1–2 and all #8/#9 behavior.
-- [ ] Add the six existing hardening tests, updating the late-write expectation to modern targeted writes with a separately tested legacy fallback. Make strict-shell fixtures explicitly test unset activation variables rather than silently masking shell failures.
-- [ ] Add actual `zsh -f` tests for deactivation with zero and multiple PID files. Replace the unmatched glob using the same `command find` strategy already used in activation.
-- [ ] Compute and validate root/session paths before exporting PATH, TMUX, or shim variables. Check directory creation, owner, permissions, and symlinks before any activation side effects. On rejection, a captured before/after environment must match.
-- [ ] Use #2's deterministic session slug/hash contract in both supported shell families. Reject traversal or symlink escapes in cleanup using resolved paths, not merely a lexical string prefix. Test a forged outside path, a `..` path, root itself, an empty path, and a symlinked session child against sentinel files inside the temporary test directory.
-- [ ] Ensure re-sourcing leaves exactly one shim PATH entry, including when it already appears later in PATH. Preserve the original environment needed for deactivation.
-- [ ] Verify a new shell joining a live session does not remove another process's allocation lock or command environment snapshot. Use two controlled live test processes, overlapping startup, and assertions for unique pane IDs. Sweep only demonstrably stale owned state.
-- [ ] Make all cleanup paths agree on pane-owned files, including `.title` and `.cmd`. Test early wrapper failure, command timeout, normal exit, and kill while waiting on the FIFO.
-- [ ] Record whether deactivation is session-wide. Preserve that explicit contract for this integration; independent per-tab teardown is a separate feature unless the user chooses to expand scope.
-- [ ] Run Bash and zsh tests, both capability profiles, and the two-tab regression sequence. Commit state work in focused stages, for example `fix: validate activation before exporting state` and `fix: preserve live session state during shell lifecycle`.
+**Gate:** Helper tests pass in both Bash versions. No production entry point depends on an absent installed helper.
 
-## Task 4: Establish the maintenance gate and reconcile core drafts
+## M2b: Atomic runtime, activation, and delivery cutover
 
-**Files:** Create `.github/workflows/test.yml`, `CONTRIBUTING.md`, `CHANGELOG.md`; modify `README.md` and remove genuinely unused helpers from `bin/tmux`.
+**Files:** Driver, wrapper, bash/zsh adapters, installer, helper, compatibility/state tests.
 
-- [ ] Remove the unused `stack_agent_panes` and `refocus_main` helpers and obsolete focus-chain comments. Remove unused parsed-value variables where options are intentionally ignored. Keep semantic fixes separate from cosmetic cleanup.
-- [ ] Resolve actionable ShellCheck diagnostics. For intentional source-or-execute fallbacks, use narrow documented suppressions; do not disable a broad category to hide real failures.
-- [ ] Add Ubuntu and macOS jobs. Install ShellCheck and zsh in the test environment; use macOS `/bin/bash` for the 3.2 compatibility gate and also run a current Bash. Add fish when task 5 is integrated. Run these checks:
+- [ ] Wire all core entry points to the helper and install the complete manifest together. Require v2 schema/token validation and clearly reject inherited legacy activation.
+- [ ] Make activation transactional, normalize PATH once, and preserve the initial restoration baseline across re-source.
+- [ ] Snapshot exported environment per pane, preserve actual new-pane identity, validate restoration, and delete the restored snapshot.
+- [ ] Pass the nonce last in wrapper argv and register PID/UID/birth/token. Keep the wrapper as a stable supervisor; payload exec/traps/options run in a child using the selected Bash.
+- [ ] Serialize sibling creation and check reservations/registration against teardown. Preserve modern anchors and state the legacy placement limit.
+- [ ] Add NUL framing, one durable claim, bounded reader/writer handling, atomic phase/result publication, and receipt authentication after process exit.
+- [ ] Implement unknown-outcome diagnostics without retry/kill. Centralize transient cleanup and retained records; never reset IDs or recursively delete arbitrary state.
+- [ ] Add all remaining argv/delivery cases, actual zsh lifecycle, snapshot isolation, exec supervision, concurrent creation/teardown, and receipt retirement. Prove partial framed input cannot run its initial marker command.
+- [ ] Run every core case introduced through M2b and an installed-copy protocol smoke test; commit `feat: supervise framed launches in validated v2 state` as a coherent sender/receiver/runtime change. M2c adds terminal-control and remaining teardown cases before the complete M3 gate.
 
-```bash
-for script in activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh tests/compat.sh tests/state.sh; do
-    bash -n "$script" || exit 1
-done
-shellcheck activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh tests/compat.sh tests/state.sh
-bash tests/run.sh
-git diff --check
-```
+**Gate:** Baseline protocols pass; no mixed old/new state; incomplete delivery never executes; fast exits retain observable acceptance; core entry points agree on ownership and schema.
 
-Parse each script separately: `bash -n file1 file2` only parses `file1`. Ensure the CI whitespace check covers the PR's actual base-to-head diff rather than only an empty checkout worktree.
+## M2c: Teardown and terminal controls
 
-- [ ] Test `install.sh` and uninstall using a temporary XDG data/runtime root, including paths with spaces. Validate the installed copy by launching the same protocol fixtures against it.
-- [ ] Update the architecture diagram and configuration descriptions for both launch protocols, capability-based targeting, and the explicitly supported tmux subset. Distinguish locally tested Zellij 0.45.1 behavior, mock legacy profiles, and contributor-reported Claude versions.
-- [ ] Add concise unreleased notes and the local development commands. Keep test commands, supported shell claims, and CI in agreement.
-- [ ] Once the replacement core integration is verified and merged, mark #2/#5 superseded with its commit/PR and preserve attribution. #4 is already closed. Prepare any public message as a concrete draft; sending a GitHub message requires explicit user authorization.
+**Files:** Driver/helper/wrapper, state/compatibility tests; add `tests/live.sh` or a small test-only PTY runner.
 
-**Core merge gate:** Linux/macOS jobs green, no unaddressed P1 review findings, passing installed-copy tests, and an attached two-tab smoke test. Report the lack of an authenticated local Claude conversation explicitly. An upstream release is a later decision.
+- [ ] Complete session-wide closing, targeted pane close, bounded exit, owned-file cleanup, retained counters, and restoration on teardown failure.
+- [ ] Correct C-c dispatch and use targeted byte 3 or the documented focus-plus-byte fallback. Do not port #6's broken boolean or negative-wrapper-PID assumption.
+- [ ] Run attached canonical/raw PTY and unrelated-process tests; verify supervisor child cleanup. Record this as the incorporated interrupt portion of #6.
+- [ ] Document and verify exact quiescent stale-mutex recovery, excluding durable launch claims and preserving counters/unrelated state.
+- [ ] Commit lifecycle and terminal-control units separately when independently passing.
 
-## Task 5: Integrate fish from #7 against the stabilized contract
+**Gate:** Shell lifecycle, cleanup/closing, and interrupt cases pass. No unverified process-group signalling fallback remains.
 
-**Files:** Add `activate.fish`, `deactivate.fish`, `functions/claude-zellij.fish`, `install.fish`, `tests/fish.sh`; modify `install.sh`, `tests/run.sh`, CI, and README.
+## M3: Core integration and maintenance gate
 
-- [ ] Rebase #7 or transplant its scoped changes with attribution. The current conflict is README-only, but semantic state compatibility must still be fixed.
-- [ ] Preserve its corrected checks-before-export behavior and optional on-demand wrapper. Adopt the same state root variable, slug/hash naming, containment checks, PATH deduplication, and live-lock policy as task 3.
-- [ ] Run `fish --no-config` fixtures for outside-Zellij no-op, fresh activation, repeated activation, stale state, failed activation rollback, empty deactivation, and PATH restoration.
-- [ ] Test bash and fish against the same session name and temporary runtime base; their resolved state paths must match. Verify that either shell can read valid state made by the other without destroying a live lock or pane.
-- [ ] Test the `claude-zellij` wrapper using a stub executable that records argv/environment: outside Zellij, inside, already active, missing installation, quoted spaces, explicit teammate-mode override, and exit-status propagation. The parent fish environment must remain unchanged in on-demand mode.
-- [ ] Test both installers, update-in-place, and uninstall under temporary XDG data/config roots. Check that the autoload function and installed helper files agree with documented paths.
-- [ ] Run `fish --no-config -n` on each fish file plus full bash/zsh/fish CI. Merge fish only after these checks pass; local fish runtime testing was not possible during the audit.
+**Files:** CI, install fixtures, README, CONTRIBUTING.md, CHANGELOG.md, evidence ledger; narrow driver cleanup.
 
-## Task 6: Divide #6 into independent capabilities
+- [ ] Verify installed hashes/modes, spaced XDG paths, update/uninstall isolation, and full protocol execution without checkout helper fallback.
+- [ ] Remove unused helpers/stale comments after behavior is covered. Resolve ShellCheck findings with narrow justified suppressions only.
+- [ ] Require syntax, clean ShellCheck, full core suites, actual zsh, installed-copy tests, and PR-diff whitespace across Linux/macOS.
+- [ ] Document the supported command/capability matrix, v2 upgrade/rollback, session-wide teardown, explicit recovery, and development commands. Add unreleased notes with attribution.
+- [ ] Run all three live two-tab cases and interrupt PTY tests on the exact integration commit; record tool versions and observations.
+- [ ] Review the final base-to-head diff and scoped staging. Prepare #2/#5 reconciliation drafts without claiming the replacement already merged.
 
-**Files:** `bin/tmux`, targeted test cases, README, changelog. Use separate commits and preferably separate review units.
+**Gate:** All required checks pass, no unresolved P1 finding, and complete installed-copy/attached live evidence. Report authenticated Claude testing separately; stand-ins do not satisfy it.
 
-1. **Interrupts first.** Restore `if [ "$sk_send_sigint" = true ]; then`. Use an isolated process group containing a parent and child that record signal receipt. A plain C-c must cause the intended SIGINT behavior, produce no `write-chars`, and not affect any unrelated process. Verify the actual wrapper process-group arrangement before claiming descendant interruption.
-2. **Capture next.** Probe the installed `dump-screen` interface. On capable Zellij, use the recorded target ID and propagate read failures. Cover missing/unknown targets, host `%0` mapping, empty and multiline output, preservation of trailing newlines, and no focus movement. Define the supported `-p` behavior and explicitly handle unsupported buffer/range semantics. The modern command was verified with Zellij 0.45.1; older support requires a validated adapter or a clear nonzero unsupported result.
-3. **Layout last.** Retain `ZELLIJ_SHIM_LAYOUT=right|down` only with tests establishing first-agent override, second-agent stacking, and separate leader groups under #9's anchor logic. Remove the misleading promise that every agent follows the base override when subsequent panes are still forced down.
+## M4: Fish from #7
 
-- [ ] Add a failing regression for each unit before changing its implementation, then run the full baseline. Recheck the actual PR diff after conflicts are resolved, especially around the no-op dispatch list.
-- [ ] Reconcile #6 only after every retained component is accounted for. If capture or layout is deferred, leave that remaining work explicitly tracked instead of closing the entire contribution as completed.
+**Files:** Fish adapters/function/installer, core installer, `tests/fish.sh`, CI and docs.
 
-## Completion checklist
+- [ ] Rebase/port the refreshed #7 head with attribution/relevant trailers and preserve its checks-before-export improvement.
+- [ ] Use the shared helper and identical restoration/PATH rules; create no second state/hash/cleanup algorithm.
+- [ ] Keep child-shell activation optional; detect explicit teammate-mode choice before adding a default. Preserve argv/environment/status and parent isolation.
+- [ ] Test both installers and autoload management under temporary XDG config/data roots, without altering actual config.fish.
+- [ ] Run every fish case with real fish on Linux/macOS, plus core regression. Record tested versions and any support floor established by evidence.
+- [ ] Commit/review fish independently after the core interface freezes.
 
-- [ ] #8/#9 behavior remains covered and passing.
-- [ ] Late input reaches its explicit pane without changing focus on capable Zellij.
-- [ ] Command strings and argv preserve their respective semantics; invalid startup requests fail visibly.
-- [ ] Bash 3.2/current Bash/zsh tests pass; fish tests pass once fish support is included.
-- [ ] Shared state invariants and concurrent shell activation are tested.
-- [ ] Linux/macOS CI and installed-copy checks pass.
-- [ ] README, changelog, and contribution instructions match verified behavior.
-- [ ] Every remaining PR has a clear incorporated/deferred/superseded disposition with attribution.
-- [ ] No unrelated `.serena/`, runtime snapshots, credentials, or temporary state are staged.
-- [ ] Public changes, local integration, test limitations, and any remaining feature work are accurately reported.
+**Gate:** Bash/fish state and lifecycle agree; parent isolation and installed function update/uninstall are proven. Static review is insufficient.
+
+## M5: Remaining #6 capabilities
+
+**Files:** Driver, dedicated tests, README/changelog. Separate review units; no simultaneous shared-file editing without one owner.
+
+- [ ] **Capture:** Implement only `-p [-t %N]` and optional `-S -`, targeted direct stdout, caller-default mapping, and visible unsupported/backend errors. Run capture plus core cases; commit independently.
+- [ ] **Layout:** Implement exact first-agent environment/flag precedence and early invalid-value rejection. Preserve sibling down-stacking and independent groups. Run layout and live placement; commit independently.
+- [ ] Record each component as incorporated or explicitly deferred. Do not close #6 merely because interrupts landed earlier.
+
+**Gate:** Each retained feature passes its own contract and documentation. Deferred work remains visibly accounted for.
+
+## M6: Contribution reconciliation
+
+| Source | Verified original identity | Treatment |
+|---|---|---|
+| #2 `41a94a7` / #5 `ab9b063` | Stanislav Cherepanov; identical trees | Incorporate reviewed intent once |
+| #6 `b71296f` | DeepTrial | Track interrupt, capture, and layout independently |
+| #7 `5120d78` | Maxim Rubchinsky; existing coauthor trailers | Preserve attribution/trailers when carrying original commits |
+| #8/#9 | Already merged in the audited base | Preserve behavior and reference in maintenance notes |
+
+- [ ] Use `cherry-pick -x` when retaining an original commit appropriately. Scoped rewrites name the source PR/hash and preserve author credit; do not misrepresent newly written tests as original contribution code.
+- [ ] Prepare public messages with actual replacement PR/commit IDs and incorporated/deferred components. Obtain authorization appropriate to remote actions in the implementation task.
+- [ ] After replacement merges, reconcile #2/#5; reconcile #7 after fish merges; reconcile #6 only when all components are merged or explicitly tracked. #3 and issue #4 are already closed in the audit snapshot.
+- [ ] Finalize changelog, supported matrix, evidence ledger, and branch disposition. No release tag is planned.
+
+## Completion distinction
+
+Planning is complete when START HERE, detailed design, acceptance matrix, execution sequence, historical sources/manifest, and audit links are committed and consistent. Development checkboxes stay open until a future task performs the work.
+
+Development completion requires the agreed integrations, named acceptance gates, scoped clean diffs, contribution disposition, and an honest account of unrun authenticated Claude/platform checks. Closing this conversation does not imply those later steps happened.

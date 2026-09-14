@@ -1,0 +1,90 @@
+from pathlib import Path
+import json, os, shlex, subprocess, time, pty, fcntl, termios, struct, threading
+
+root=Path(__file__).parent
+session='review-nk84'
+repo=root/'main'
+state=root/'live-state'; state.mkdir(exist_ok=True)
+(state/'next_id').write_text('1\n'); (state/'sessions').touch()
+env={'PATH':'/opt/homebrew/bin:/usr/bin:/bin','ZELLIJ_SOCKET_DIR':str(root/'s2'),
+     'ZELLIJ_SESSION_NAME':session,'ZELLIJ':'1','ZELLIJ_TMUX_SHIM_STATE':str(state),
+     'ZELLIJ_TMUX_SHIM_DIR':str(repo),'TMUX_PANE':'%0','ZELLIJ_PANE_ID':'0',
+     'XDG_CACHE_HOME':str(root/'cache'),'XDG_DATA_HOME':str(root/'data'),
+     'TERM':'xterm-256color'}
+def z(*a):
+    p=subprocess.run(['zellij','-s',session,'action',*a],env=env,text=True,capture_output=True,timeout=10)
+    if p.returncode: raise RuntimeError((a,p.stderr))
+    return p.stdout
+def shim(*a):
+    p=subprocess.run(['/bin/bash',str(repo/'bin/tmux'),*a],env=env,text=True,capture_output=True,timeout=10)
+    return {'rc':p.returncode,'stdout':p.stdout,'stderr':p.stderr}
+def panes():
+    return [{k:p.get(k) for k in ['id','title','tab_id','tab_name','is_focused','pane_x','pane_y','pane_rows','pane_columns']}
+            for p in json.loads(z('list-panes','--all','--json')) if not p['is_plugin']]
+result={}
+startenv={k:v for k,v in env.items() if k not in ('ZELLIJ','ZELLIJ_SESSION_NAME','ZELLIJ_PANE_ID')}
+(root/'live-layout.kdl').write_text('''layout {
+    tab name="observer" {
+        pane command="/bin/sleep" { args "600"; }
+    }
+    tab name="leader-tab" {
+        pane command="/bin/sleep" { args "600"; }
+    }
+}
+''')
+subprocess.run(['zellij','--config','/dev/null','--data-dir',str(root/'zellij-data'),
+                '--layout',str(root/'live-layout.kdl'),
+                'attach','--create-background',session],
+               env=startenv,check=True,capture_output=True,timeout=15)
+master,slave=pty.openpty()
+fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack('HHHH',50,120,0,0))
+def attached_session():
+    os.setsid()
+    fcntl.ioctl(slave,termios.TIOCSCTTY,0)
+client=subprocess.Popen(['zellij','--config','/dev/null','attach',session],env=startenv,
+    stdin=slave,stdout=slave,stderr=slave,preexec_fn=attached_session)
+os.close(slave)
+def drain():
+    try:
+        while os.read(master,65536): pass
+    except OSError: pass
+threading.Thread(target=drain,daemon=True).start()
+time.sleep(1)
+try:
+    result['attached_client_running']=client.poll() is None
+    result['initial_panes']=panes()
+    for _ in range(30):
+        candidates=[p for p in panes() if p['tab_name']=='leader-tab']
+        if candidates: break
+        time.sleep(.1)
+    second=candidates[0]
+    env['ZELLIJ_PANE_ID']=str(second['id'])
+    z('go-to-tab','1')
+    result['before']=panes()
+    for n,title in [(1,'review-researcher'),(2,'review-tester')]:
+        result[f'split{n}']=shim('split-window','-d','-t','%0','-h','-P','-F','#{pane_id}','--','cat')
+        assert result[f'split{n}']['stdout']==f'%{n}\n',result
+        shim('select-pane','-t',f'%{n}','-T',title)
+        cmd='printf %s '+shlex.quote(title)+' > '+shlex.quote(str(root/f'live-command-{n}'))+'; /bin/sleep 60'
+        result[f'respawn{n}']=shim('respawn-pane','-k','-t',f'%{n}','--',cmd)
+    result['after']=panes()
+    result['commands']=[(root/f'live-command-{n}').read_text() for n in (1,2)]
+    result['list_panes']=shim('list-panes')
+    result['late_send']=shim('send-keys','-t','%1','REVIEW_LATE_INPUT','Enter')
+    time.sleep(.2)
+    first_agent=(state/'1.zellij_id').read_text().strip()
+    result['late_marker_in_agent']='REVIEW_LATE_INPUT' in z('dump-screen','--pane-id',first_agent)
+    result['late_marker_in_original_tab']='REVIEW_LATE_INPUT' in z('dump-screen','--pane-id','0')
+    result['late_marker_in_leader']='REVIEW_LATE_INPUT' in z('dump-screen','--pane-id',str(second['id']))
+    result['kill']=shim('kill-pane','-t','%1')
+    time.sleep(.2)
+    result['after_kill']=panes()
+    result['remaining_first_state']=sorted(p.name for p in state.glob('1.*'))
+finally:
+    cleanup=subprocess.run(['zellij','-s',session,'kill-session',session],env=env,text=True,capture_output=True,timeout=10)
+    result['session_cleanup']={'rc':cleanup.returncode,'stderr':cleanup.stderr}
+    try: client.wait(timeout=5)
+    except subprocess.TimeoutExpired: client.terminate(); client.wait(timeout=5)
+    os.close(master)
+    (root/'live-results.json').write_text(json.dumps(result,indent=2)+'\n')
+    print(json.dumps(result,indent=2))
