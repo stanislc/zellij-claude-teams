@@ -180,6 +180,71 @@ refocus_main() {
     zellij action move-focus left 2>/dev/null || true
 }
 
+# Can this zellij place panes and rename them by id? Needs BOTH
+# `new-pane --no-focus` (0.44.0) and `rename-pane --pane-id` (0.44.1), so
+# 0.44.1+. They are one capability: --no-focus never gives the new pane focus,
+# so a focus-based rename would hit the user's pane instead. With the
+# capability, panes are placed relative to the pane the command was issued
+# from (ZELLIJ_PANE_ID) instead of wherever the user's focus is — a teammate
+# never lands in another tab, and focus never leaves the user's pane.
+zellij_supports_targeted_panes() {
+    if [ -z "${_ZELLIJ_TARGETED:-}" ]; then
+        if zellij action new-pane --help 2>/dev/null | grep -q -- '--no-focus' &&
+           zellij action rename-pane --help 2>/dev/null | grep -q -- '--pane-id'; then
+            _ZELLIJ_TARGETED=yes
+        else
+            _ZELLIJ_TARGETED=no
+        fi
+    fi
+    [ "$_ZELLIJ_TARGETED" = yes ]
+}
+
+# Create a zellij pane running the wrapper for synthetic pane $1 in direction
+# $2, placed relative to zellij pane id $3 (defaults to the caller's pane),
+# optionally named $4. Echoes zellij's pane id (e.g. 12) when available.
+create_agent_pane() {
+    local pane_id="$1" direction="$2" anchor="${3:-${ZELLIJ_PANE_ID:-}}" name="${4:-}"
+    local out=""
+    if zellij_supports_targeted_panes; then
+        # ZELLIJ_PANE_ID tells zellij which pane "issued" the command.
+        out=$(ZELLIJ_PANE_ID="$anchor" zellij action new-pane --no-focus --close-on-exit -d "$direction" \
+            -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$pane_id" 2>/dev/null) || true
+        out="${out#terminal_}"
+        if [ -n "$name" ] && [ -n "$out" ]; then
+            zellij action rename-pane --pane-id "$out" "$name" >/dev/null 2>&1 || true
+        fi
+    else
+        # Legacy (< 0.44.1): focus-dependent placement next to the focused pane;
+        # the name, if any, is applied at creation.
+        local -a args=(action new-pane --close-on-exit -d "$direction")
+        [ -n "$name" ] && args+=(-n "$name")
+        zellij "${args[@]}" \
+            -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$pane_id" > /dev/null 2>&1 &
+    fi
+    printf '%s' "$out"
+}
+
+# Zellij pane id of the most recently created live agent in the caller's tab
+# (group), or empty. Used as the anchor so 2nd+ agents stack under the last one.
+last_live_agent_zellij_id() {
+    local best_key="" gf gk pp pd
+    for gf in "${STATE_DIR}"/*.group; do
+        [ -f "$gf" ] || continue
+        gk="${gf##*/}"; gk="${gk%.group}"
+        [ "$(cat "$gf" 2>/dev/null)" = "${ZELLIJ_PANE_ID:-0}" ] || continue
+        pp="${STATE_DIR}/${gk}.pid"
+        [ -f "$pp" ] || continue
+        pd=$(cat "$pp" 2>/dev/null)
+        [ -n "$pd" ] && kill -0 "$pd" 2>/dev/null || continue
+        [ -f "${STATE_DIR}/${gk}.zellij_id" ] || continue
+        if [ -z "$best_key" ] || [ "$gk" -gt "$best_key" ] 2>/dev/null; then
+            best_key="$gk"
+        fi
+    done
+    [ -n "$best_key" ] && cat "${STATE_DIR}/${best_key}.zellij_id" 2>/dev/null
+    return 0
+}
+
 # Serialize a bash array into a single string preserving argument boundaries.
 # Each element is printf-%q escaped so the wrapper can eval it safely.
 serialize_command() {
@@ -299,6 +364,15 @@ split-window)
         esac
     done
 
+    # Claude Code >= 2.1.2xx creates the pane with a placeholder command
+    # (`split-window ... -- cat`) and later replaces it via `respawn-pane -k`.
+    # Don't run the placeholder — keep the wrapper waiting on its FIFO so the
+    # respawn-pane handler can deliver the real command.
+    if [ ${#sw_command[@]} -eq 1 ] && [ "${sw_command[0]}" = "cat" ]; then
+        log_debug "split-window: ignoring placeholder command 'cat' (respawn-pane will deliver the real one)"
+        sw_command=()
+    fi
+
     # Allocate a synthetic pane ID
     NEW_PANE_ID=$(alloc_pane_id) || { log_debug "split-window: alloc failed"; exit 1; }
     PANE_KEY="${NEW_PANE_ID#%}"
@@ -312,32 +386,24 @@ split-window)
     # Focus chains through agents (no intermediate refocus to main), so the
     # 2nd+ pane is created relative to the previous agent — "down" gives
     # a clean [main | agent1 / agent2 / agent3] layout.
-    for _gf in "${STATE_DIR}"/*.group; do
-        [ -f "$_gf" ] || continue
-        _gk="${_gf##*/}"; _gk="${_gk%.group}"
-        [ "$_gk" = "$PANE_KEY" ] && continue
-        [ "$(cat "$_gf" 2>/dev/null)" = "${ZELLIJ_PANE_ID:-0}" ] || continue
-        _pp="${STATE_DIR}/${_gk}.pid"
-        [ -f "$_pp" ] || continue
-        _pd=$(cat "$_pp" 2>/dev/null)
-        if [ -n "$_pd" ] && kill -0 "$_pd" 2>/dev/null; then
-            sw_direction="down"
-            break
-        fi
-    done
+    # The anchor is the pane the new one is placed next to: the last live agent
+    # in this tab (stack below it), else the caller's own pane (split right).
+    sw_anchor=$(last_live_agent_zellij_id)
+    if [ -n "$sw_anchor" ]; then
+        sw_direction="down"
+    fi
 
-    log_debug "split-window: creating pane ${NEW_PANE_ID} direction=${sw_direction}"
+    log_debug "split-window: creating pane ${NEW_PANE_ID} direction=${sw_direction} anchor=${sw_anchor:-caller}"
 
     # Snapshot env so the wrapper can restore it in the new pane
     snapshot_env
 
-    # Build zellij new-pane command
-    zellij_args=(action new-pane --close-on-exit -d "$sw_direction")
-
-    # Launch the wrapper in a new zellij pane.
-    # Redirect stdout/stderr — zellij prints the new pane ID (e.g. "terminal_25")
-    # which would leak into our output and corrupt the pane ID returned via -P.
-    zellij "${zellij_args[@]}" -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$NEW_PANE_ID" > /dev/null 2>&1 &
+    # Launch the wrapper in a new zellij pane, placed relative to the anchor
+    # without moving the user's focus (see create_agent_pane). zellij's own pane
+    # id is captured, never printed — -P must output only our synthetic id.
+    _zid=$(create_agent_pane "$NEW_PANE_ID" "$sw_direction" "$sw_anchor")
+    [ -n "$_zid" ] && echo "$_zid" > "${STATE_DIR}/${PANE_KEY}.zellij_id"
+    unset _zid
 
     # Wait for wrapper to signal readiness (creates .ready sentinel)
     if ! wait_for_ready "$PANE_KEY"; then
@@ -441,6 +507,93 @@ send-keys)
     exit 0
     ;;
 
+# --- respawn-pane ---
+# Claude Code >= 2.1.2xx launches the teammate with
+#   respawn-pane -k -t %N -- '<shell command>'
+# after creating the pane with a placeholder. tmux runs the command via
+# `sh -c`, so it's delivered to the wrapper as raw shell text (like send-keys),
+# not %q-escaped argv.
+respawn-pane)
+    rp_target=""
+    rp_command=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) rp_target="${2:-}"; shift 2 || shift ;;
+            -c) shift 2 || shift ;;
+            -k) shift ;;
+            -e) shift 2 || shift ;;
+            --)
+                shift
+                rp_command=("$@")
+                break
+                ;;
+            -*) shift ;;
+            *)
+                rp_command=("$@")
+                break
+                ;;
+        esac
+    done
+
+    if [ -z "$rp_target" ]; then
+        log_debug "respawn-pane: no target specified, ignoring"
+        exit 0
+    fi
+
+    PANE_KEY="${rp_target#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "respawn-pane: invalid pane key"; exit 1; }
+
+    if [ ${#rp_command[@]} -eq 0 ]; then
+        log_debug "respawn-pane: no command for ${rp_target}, ignoring"
+        exit 0
+    fi
+
+    FIFO_PATH="${STATE_DIR}/${PANE_KEY}.fifo"
+    COMMAND_TEXT="${rp_command[*]}"
+    log_debug "respawn-pane: target=${rp_target} command='${COMMAND_TEXT}'"
+
+    if [ -p "$FIFO_PATH" ]; then
+        # Wrapper is still waiting on the FIFO (placeholder was never run)
+        echo "$COMMAND_TEXT" > "$FIFO_PATH"
+        log_debug "respawn-pane: delivered to FIFO"
+        wait_for_named "$PANE_KEY"
+        exit 0
+    fi
+
+    # The wrapper already exec'd a command. A real respawn would need a new
+    # pane; we don't support that, and we must not pretend we did — Claude Code
+    # surfaces a non-zero exit as "Failed to send command to pane".
+    log_debug "respawn-pane: FIFO gone for ${rp_target}, cannot respawn a running pane"
+    echo "zellij-tmux-shim: respawn-pane: pane ${rp_target} is already running a command" >&2
+    exit 1
+    ;;
+
+# --- select-pane ---
+# `select-pane -t %N -T <title>` sets the pane title. The wrapper renames the
+# zellij pane when it receives its command (that locks the title); record the
+# title so the wrapper can use it if the command carries no --agent-name.
+# Plain focus changes (select-pane -t %N) are no-ops: zellij manages focus.
+select-pane)
+    sp_target=""
+    sp_title=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) sp_target="${2:-}"; shift 2 || shift ;;
+            -T) sp_title="${2:-}"; shift 2 || shift ;;
+            *) shift ;;
+        esac
+    done
+    if [ -n "$sp_target" ] && [ -n "$sp_title" ]; then
+        PANE_KEY="${sp_target#%}"
+        validate_pane_key "$PANE_KEY" || { log_debug "select-pane: invalid pane key"; exit 1; }
+        printf '%s\n' "$sp_title" > "${STATE_DIR}/${PANE_KEY}.title"
+        log_debug "select-pane: recorded title '${sp_title}' for ${sp_target}"
+    else
+        log_debug "no-op: select-pane $*"
+    fi
+    exit 0
+    ;;
+
 # --- kill-pane ---
 kill-pane)
     kp_target=""
@@ -479,6 +632,7 @@ kill-pane)
     rm -f "${STATE_DIR}/${PANE_KEY}.ready"
     rm -f "${STATE_DIR}/${PANE_KEY}.group"
     rm -f "${STATE_DIR}/${PANE_KEY}.named"
+    rm -f "${STATE_DIR}/${PANE_KEY}.title"
 
     exit 0
     ;;
@@ -590,6 +744,12 @@ new-window)
         esac
     done
 
+    # Same placeholder handling as split-window (see there)
+    if [ ${#nw_command[@]} -eq 1 ] && [ "${nw_command[0]}" = "cat" ]; then
+        log_debug "new-window: ignoring placeholder command 'cat' (respawn-pane will deliver the real one)"
+        nw_command=()
+    fi
+
     # Allocate pane ID
     NEW_PANE_ID=$(alloc_pane_id) || { log_debug "new-window: alloc failed"; exit 1; }
     PANE_KEY="${NEW_PANE_ID#%}"
@@ -603,13 +763,10 @@ new-window)
     # Snapshot env so the wrapper can restore it in the new pane
     snapshot_env
 
-    # Build zellij command
-    zellij_args=(action new-pane --close-on-exit -d right)
-    if [ -n "$nw_name" ]; then
-        zellij_args+=(-n "$nw_name")
-    fi
-
-    zellij "${zellij_args[@]}" -- "${SHIM_DIR}/bin/zellij-pane-wrapper" "$STATE_DIR" "$SHIM_DIR" "$NEW_PANE_ID" > /dev/null 2>&1 &
+    # Place next to the caller's pane without moving focus (see create_agent_pane)
+    _zid=$(create_agent_pane "$NEW_PANE_ID" right "" "$nw_name")
+    [ -n "$_zid" ] && echo "$_zid" > "${STATE_DIR}/${PANE_KEY}.zellij_id"
+    unset _zid
 
     if ! wait_for_ready "$PANE_KEY"; then
         log_debug "new-window: pane ${NEW_PANE_ID} failed to become ready"
@@ -647,7 +804,7 @@ list-windows)
     ;;
 
 # --- No-op commands ---
-select-layout|resize-pane|select-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|capture-pane|save-buffer|delete-buffer|wait-for|refresh-client)
+select-layout|resize-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|capture-pane|save-buffer|delete-buffer|wait-for|refresh-client)
     log_debug "no-op: $CMD $*"
     exit 0
     ;;

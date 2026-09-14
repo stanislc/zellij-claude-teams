@@ -40,7 +40,9 @@ case "$PANE_KEY" in
         ;;
 esac
 
-# Write zellij's actual pane ID (available as env var inside zellij panes)
+# Write zellij's actual pane ID (available as env var inside zellij panes).
+# The shim may already have recorded it from new-pane's output; ours is
+# authoritative.
 echo "${ZELLIJ_PANE_ID:-unknown}" > "${STATE_DIR}/${PANE_KEY}.zellij_id"
 
 # Write our PID so kill-pane can terminate us
@@ -64,6 +66,7 @@ cleanup() {
     rm -f "${STATE_DIR}/${PANE_KEY}.ready"
     rm -f "${STATE_DIR}/${PANE_KEY}.group"
     rm -f "${STATE_DIR}/${PANE_KEY}.named"
+    rm -f "${STATE_DIR}/${PANE_KEY}.title"
 }
 trap cleanup EXIT
 
@@ -103,10 +106,24 @@ fi
 # the new pane). rename-pane operates on the focused pane AND locks the title,
 # so Claude Code's continuous terminal title resets are permanently ignored.
 AGENT_NAME=""
-if [[ "$COMMAND" =~ --agent-name[[:space:]]+([^[:space:]]+) ]]; then
+if [ -f "${STATE_DIR}/${PANE_KEY}.title" ]; then
+    # Exact title set via `select-pane -T` (Claude Code >= 2.1.2xx)
+    AGENT_NAME=$(cat "${STATE_DIR}/${PANE_KEY}.title" 2>/dev/null)
+fi
+if [ -z "$AGENT_NAME" ] && [[ "$COMMAND" =~ --agent-name[[:space:]]+([^[:space:]]+) ]]; then
+    # Older protocol: derive it from the command line
     AGENT_NAME="${BASH_REMATCH[1]}"
+fi
+if [ -n "$AGENT_NAME" ]; then
     echo "[wrapper] renaming pane to '${AGENT_NAME}' (zellij_pane=${ZELLIJ_PANE_ID:-?})" >> "${STATE_DIR}/shim.log" 2>/dev/null || true
-    zellij action rename-pane "$AGENT_NAME" 2>>"${STATE_DIR}/shim.log" || true
+    # Target this pane explicitly (zellij 0.44.1+). Older zellij renames the
+    # focused pane — correct there, because the shim only uses focus-based
+    # creation (which focuses the new pane) when --pane-id is unavailable.
+    if [ -n "${ZELLIJ_PANE_ID:-}" ] && zellij action rename-pane --help 2>/dev/null | grep -q -- '--pane-id'; then
+        zellij action rename-pane --pane-id "$ZELLIJ_PANE_ID" "$AGENT_NAME" 2>>"${STATE_DIR}/shim.log" || true
+    else
+        zellij action rename-pane "$AGENT_NAME" 2>>"${STATE_DIR}/shim.log" || true
+    fi
     echo "[wrapper] rename-pane exit code: $?" >> "${STATE_DIR}/shim.log" 2>/dev/null || true
 fi
 
