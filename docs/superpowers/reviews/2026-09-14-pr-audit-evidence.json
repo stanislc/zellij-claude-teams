@@ -1,0 +1,758 @@
+{
+  "date": "2026-09-14",
+  "reviewed_main": "93ed78831b0745d0cfa3b33ba085298f8855ef93",
+  "local_integration": "8e4e33d69ee8a22580b049f8f65a874ed6ae65db",
+  "environment": {
+    "platform": "macOS arm64",
+    "zellij": "0.45.1",
+    "bash": [
+      "3.2.57",
+      "5.3.15"
+    ],
+    "zsh": "5.9",
+    "shellcheck": "0.11.0",
+    "fish_available": false,
+    "claude_available": false
+  },
+  "wrapper_and_mock_probes": [
+    {
+      "probe": "merged-protocol-bash32",
+      "first": [
+        0,
+        "%1\n"
+      ],
+      "placeholder_deferred": true,
+      "launch_rc": 0,
+      "result": "hello space & quote",
+      "second": "%2\n",
+      "other_group": "%3\n",
+      "panes": [
+        "%0",
+        "%1",
+        "%2",
+        "%3"
+      ],
+      "already_running_rc": 1,
+      "creations": [
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash32/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%1"
+          ],
+          "issuer": "10"
+        },
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "down",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash32/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%2"
+          ],
+          "issuer": "101"
+        },
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash32/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%3"
+          ],
+          "issuer": "20"
+        }
+      ],
+      "renames": [
+        {
+          "args": [
+            "action",
+            "rename-pane",
+            "--pane-id",
+            "101",
+            "researcher"
+          ],
+          "issuer": "101"
+        }
+      ],
+      "late_input": [
+        {
+          "args": [
+            "action",
+            "write-chars",
+            "LATE_INPUT\n"
+          ],
+          "issuer": "10"
+        }
+      ],
+      "killed_state_left": []
+    },
+    {
+      "probe": "merged-protocol-bash53",
+      "first": [
+        0,
+        "%1\n"
+      ],
+      "placeholder_deferred": true,
+      "launch_rc": 0,
+      "result": "hello space & quote",
+      "second": "%2\n",
+      "other_group": "%3\n",
+      "panes": [
+        "%0",
+        "%1",
+        "%2",
+        "%3"
+      ],
+      "already_running_rc": 1,
+      "creations": [
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash53/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%1"
+          ],
+          "issuer": "10"
+        },
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "down",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash53/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%2"
+          ],
+          "issuer": "101"
+        },
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/protocol-bash53/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%3"
+          ],
+          "issuer": "20"
+        }
+      ],
+      "renames": [
+        {
+          "args": [
+            "action",
+            "rename-pane",
+            "--pane-id",
+            "101",
+            "researcher"
+          ],
+          "issuer": "101"
+        }
+      ],
+      "late_input": [
+        {
+          "args": [
+            "action",
+            "write-chars",
+            "LATE_INPUT\n"
+          ],
+          "issuer": "10"
+        }
+      ],
+      "killed_state_left": []
+    },
+    {
+      "probe": "capability-none",
+      "rc": 0,
+      "stdout": "%1\n",
+      "actions": [
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "-n",
+            "named-window",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/capabilities-none/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%1"
+          ],
+          "issuer": "10"
+        }
+      ]
+    },
+    {
+      "probe": "capability-no-focus",
+      "rc": 0,
+      "stdout": "%1\n",
+      "actions": [
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "-n",
+            "named-window",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/capabilities-no-focus/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%1"
+          ],
+          "issuer": "10"
+        }
+      ]
+    },
+    {
+      "probe": "capability-full",
+      "rc": 0,
+      "stdout": "%1\n",
+      "actions": [
+        {
+          "args": [
+            "action",
+            "new-pane",
+            "--no-focus",
+            "--close-on-exit",
+            "-d",
+            "right",
+            "--",
+            "/private/tmp/zellij-review-nk81l5p9/main/bin/zellij-pane-wrapper",
+            "/private/tmp/zellij-review-nk81l5p9/runs/capabilities-full/state",
+            "/private/tmp/zellij-review-nk81l5p9/main",
+            "%1"
+          ],
+          "issuer": "10"
+        },
+        {
+          "args": [
+            "action",
+            "rename-pane",
+            "--pane-id",
+            "101",
+            "named-window"
+          ],
+          "issuer": "10"
+        }
+      ]
+    },
+    {
+      "probe": "validation-pre8",
+      "missing_target": 0,
+      "missing_command": 0,
+      "invalid_target": 0,
+      "display_target": "%0"
+    },
+    {
+      "probe": "validation-pr8",
+      "missing_target": 0,
+      "missing_command": 0,
+      "invalid_target": 1,
+      "display_target": "%0"
+    },
+    {
+      "probe": "validation-main",
+      "missing_target": 0,
+      "missing_command": 0,
+      "invalid_target": 1,
+      "display_target": "%0"
+    },
+    {
+      "probe": "legacy-direct-argv",
+      "rc": 0,
+      "value": "two words"
+    },
+    {
+      "probe": "legacy-send",
+      "rc": 0,
+      "value": "hello"
+    },
+    {
+      "probe": "respawn-multiple-argv",
+      "rc": 0,
+      "output": "twowords"
+    },
+    {
+      "probe": "pr6-interrupt",
+      "rc": 1,
+      "actions": []
+    },
+    {
+      "probe": "hardening-harness-pr2",
+      "rc": 0,
+      "stdout": "ok - activate PATH re-source is idempotent\nok - activate sanitizes session-derived state path\nok - deactivate refuses unsafe state path\nok - split-window -P prints only tmux pane id\nok - display-message honors target pane\nok - late send-keys focuses target pane before writing\n6 passed, 0 failed\n",
+      "stderr": ""
+    },
+    {
+      "probe": "hardening-harness-main",
+      "rc": 1,
+      "stdout": "ok - split-window -P prints only tmux pane id\n1 passed, 5 failed\n",
+      "stderr": "FAIL: shim bin appears only once in PATH\n  expected: 1\n  actual:   \nnot ok - activate PATH re-source is idempotent\nFAIL: state dir must stay under shim root\n  root:  \n  state: \nnot ok - activate sanitizes session-derived state path\nnot ok - deactivate refuses unsafe state path\nFAIL: display-message returns requested target pane id\n  expected: %42\n  actual:   %0\nnot ok - display-message honors target pane\nFAIL: late send-keys focuses target pane\n  expected to find: action focus-pane-id terminal_7\n  in: action write-chars echo hello\nnot ok - late send-keys focuses target pane before writing\n"
+    }
+  ],
+  "live_attached_zellij": {
+    "attached_client_running": true,
+    "initial_panes": [
+      {
+        "id": 0,
+        "title": "/bin/sleep 600",
+        "tab_id": 0,
+        "tab_name": "observer",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 120
+      },
+      {
+        "id": 1,
+        "title": "/bin/sleep 600",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 50
+      }
+    ],
+    "before": [
+      {
+        "id": 0,
+        "title": "/bin/sleep 600",
+        "tab_id": 0,
+        "tab_name": "observer",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 120
+      },
+      {
+        "id": 1,
+        "title": "/bin/sleep 600",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 50
+      }
+    ],
+    "split1": {
+      "rc": 0,
+      "stdout": "%1\n",
+      "stderr": ""
+    },
+    "respawn1": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "split2": {
+      "rc": 0,
+      "stdout": "%2\n",
+      "stderr": ""
+    },
+    "respawn2": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "after": [
+      {
+        "id": 0,
+        "title": "/bin/sleep 600",
+        "tab_id": 0,
+        "tab_name": "observer",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 120
+      },
+      {
+        "id": 1,
+        "title": "/bin/sleep 600",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 25
+      },
+      {
+        "id": 2,
+        "title": "review-researcher",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": false,
+        "pane_x": 25,
+        "pane_y": 0,
+        "pane_rows": 25,
+        "pane_columns": 25
+      },
+      {
+        "id": 3,
+        "title": "review-tester",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": false,
+        "pane_x": 25,
+        "pane_y": 25,
+        "pane_rows": 25,
+        "pane_columns": 25
+      }
+    ],
+    "commands": [
+      "review-researcher",
+      "review-tester"
+    ],
+    "list_panes": {
+      "rc": 0,
+      "stdout": "%0\n%1\n%2\n",
+      "stderr": ""
+    },
+    "late_send": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "late_marker_in_agent": false,
+    "late_marker_in_original_tab": true,
+    "late_marker_in_leader": false,
+    "kill": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "after_kill": [
+      {
+        "id": 0,
+        "title": "/bin/sleep 600",
+        "tab_id": 0,
+        "tab_name": "observer",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 120
+      },
+      {
+        "id": 1,
+        "title": "/bin/sleep 600",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": true,
+        "pane_x": 0,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 25
+      },
+      {
+        "id": 3,
+        "title": "review-tester",
+        "tab_id": 1,
+        "tab_name": "leader-tab",
+        "is_focused": false,
+        "pane_x": 25,
+        "pane_y": 0,
+        "pane_rows": 50,
+        "pane_columns": 25
+      }
+    ],
+    "remaining_first_state": [],
+    "session_cleanup": {
+      "rc": 0,
+      "stderr": ""
+    }
+  },
+  "syntax": {
+    "/bin/bash": {
+      "activate.sh": 0,
+      "deactivate.sh": 0,
+      "install.sh": 0,
+      "bin/tmux": 0,
+      "bin/zellij-pane-wrapper": 0
+    },
+    "/opt/homebrew/bin/bash": {
+      "activate.sh": 0,
+      "deactivate.sh": 0,
+      "install.sh": 0,
+      "bin/tmux": 0,
+      "bin/zellij-pane-wrapper": 0
+    }
+  },
+  "zsh_empty_deactivation": [
+    {
+      "snapshot": "main",
+      "rc": 126,
+      "stderr": "/private/tmp/zellij-review-nk81l5p9/main/deactivate.sh:12: no matches found: /private/tmp/zellij-review-nk81l5p9/zsh-record-main/zellij-tmux-shim-501/probe/*.pid\n"
+    },
+    {
+      "snapshot": "pr2",
+      "rc": 126,
+      "stderr": "/private/tmp/zellij-review-nk81l5p9/pr2/deactivate.sh:32: no matches found: /private/tmp/zellij-review-nk81l5p9/zsh-record-pr2/zellij-tmux-shim-501/probe-2485052891/*.pid\n"
+    }
+  ],
+  "shellcheck": {
+    "rc": 1,
+    "diagnostics": [
+      {
+        "file": "bin/tmux",
+        "line": 134,
+        "endLine": 157,
+        "column": 1,
+        "endColumn": 2,
+        "level": "info",
+        "code": 2329,
+        "message": "This function is never invoked. Check usage (or ignored if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 149,
+        "endLine": 149,
+        "column": 23,
+        "endColumn": 25,
+        "level": "info",
+        "code": 2015,
+        "message": "Note that A && B || C is not if-then-else. C may run when A is true.",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 179,
+        "endLine": 181,
+        "column": 1,
+        "endColumn": 2,
+        "level": "info",
+        "code": 2329,
+        "message": "This function is never invoked. Check usage (or ignored if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 238,
+        "endLine": 238,
+        "column": 22,
+        "endColumn": 24,
+        "level": "info",
+        "code": 2015,
+        "message": "Note that A && B || C is not if-then-else. C may run when A is true.",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 311,
+        "endLine": 311,
+        "column": 17,
+        "endColumn": 29,
+        "level": "warning",
+        "code": 2034,
+        "message": "local_target appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 348,
+        "endLine": 348,
+        "column": 17,
+        "endColumn": 26,
+        "level": "warning",
+        "code": 2034,
+        "message": "sw_target appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 351,
+        "endLine": 351,
+        "column": 17,
+        "endColumn": 24,
+        "level": "warning",
+        "code": 2034,
+        "message": "sw_size appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 353,
+        "endLine": 353,
+        "column": 17,
+        "endColumn": 26,
+        "level": "warning",
+        "code": 2034,
+        "message": "sw_format appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 696,
+        "endLine": 696,
+        "column": 17,
+        "endColumn": 26,
+        "level": "warning",
+        "code": 2034,
+        "message": "ns_detach appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 730,
+        "endLine": 730,
+        "column": 17,
+        "endColumn": 26,
+        "level": "warning",
+        "code": 2034,
+        "message": "nw_target appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "bin/tmux",
+        "line": 733,
+        "endLine": 733,
+        "column": 17,
+        "endColumn": 26,
+        "level": "warning",
+        "code": 2034,
+        "message": "nw_format appears unused. Verify use (or export if used externally).",
+        "fix": null
+      },
+      {
+        "file": "deactivate.sh",
+        "line": 7,
+        "endLine": 7,
+        "column": 29,
+        "endColumn": 35,
+        "level": "info",
+        "code": 2317,
+        "message": "Command appears to be unreachable. Check usage (or ignore if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "activate.sh",
+        "line": 8,
+        "endLine": 8,
+        "column": 29,
+        "endColumn": 35,
+        "level": "info",
+        "code": 2317,
+        "message": "Command appears to be unreachable. Check usage (or ignore if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "activate.sh",
+        "line": 16,
+        "endLine": 16,
+        "column": 29,
+        "endColumn": 35,
+        "level": "info",
+        "code": 2317,
+        "message": "Command appears to be unreachable. Check usage (or ignore if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "activate.sh",
+        "line": 56,
+        "endLine": 56,
+        "column": 29,
+        "endColumn": 35,
+        "level": "info",
+        "code": 2317,
+        "message": "Command appears to be unreachable. Check usage (or ignore if invoked indirectly).",
+        "fix": null
+      },
+      {
+        "file": "activate.sh",
+        "line": 64,
+        "endLine": 64,
+        "column": 29,
+        "endColumn": 35,
+        "level": "info",
+        "code": 2317,
+        "message": "Command appears to be unreachable. Check usage (or ignore if invoked indirectly).",
+        "fix": null
+      }
+    ]
+  },
+  "merge_conflicts": {
+    "2": [
+      "CONFLICT (content): Merge conflict in README.md",
+      "CONFLICT (content): Merge conflict in bin/tmux"
+    ],
+    "5": [
+      "CONFLICT (content): Merge conflict in README.md",
+      "CONFLICT (content): Merge conflict in bin/tmux"
+    ],
+    "6": [
+      "CONFLICT (content): Merge conflict in bin/tmux"
+    ],
+    "7": [
+      "CONFLICT (content): Merge conflict in README.md"
+    ]
+  },
+  "pr6_bash53_ctrl_c": {
+    "rc": 0,
+    "actions": [
+      {
+        "args": [
+          "action",
+          "write-chars",
+          "\n"
+        ],
+        "issuer": null
+      }
+    ]
+  },
+  "pr6_bash32_ctrl_c": {
+    "rc": 1,
+    "stderr": "sk_keys[*]: unbound variable"
+  }
+}

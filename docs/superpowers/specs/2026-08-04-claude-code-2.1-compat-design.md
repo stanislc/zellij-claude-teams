@@ -1,5 +1,7 @@
 # Claude Code 2.1 Compatibility Maintenance Design
 
+> Historical design. The [2026-09-14 audit](../reviews/2026-09-14-pr-audit.md) and [cleanup plan](../plans/2026-09-14-repository-cleanup.md) supersede its execution assumptions: PRs #8/#9 are merged, issue #4 is closed, and a local Zellij smoke test is now available. The original text below is retained for context.
+
 ## Goal
 
 Restore Agent Teams pane startup with current Claude Code while preserving the command paths used by older Claude Code versions. Consolidate the existing hardening work, add regression coverage and CI, update maintenance documentation, and merge the validated result to `main`. Do not tag or publish a GitHub Release in this work.
