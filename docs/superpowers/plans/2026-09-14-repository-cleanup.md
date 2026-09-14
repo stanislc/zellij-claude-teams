@@ -31,19 +31,19 @@ M0 baseline harness + minimal CI
  -> M3 core integration gate
       -> M4 fish
       -> M5 capture and layout, independently reviewable
- -> M6 contribution reconciliation after replacement merges
+ -> M6 contribution reconciliation: withdrawal or verified integration
 ```
 
 M1 is an interim correctness patch, not the final stabilized core. Wire the v2 state and framed sender/receiver together in M2b; never deploy half the transition. Interim tests use fresh isolated state, and hot upgrades remain unsupported.
 
-The interrupt portion of #6 moves into its own core commit in M2c because supervised execution must preserve terminal control. Capture/layout remain later independent capabilities. Fish depends on the frozen core state and installation interfaces.
+The interrupt portion of #6 moves into its own core commit in M2c because supervised execution must preserve terminal control. Capture is a useful later feature; layout is optional and independently deferrable. Fish depends on the frozen core state and installation interfaces and contains none of #6's additions. Neither #2 nor #5 is a merge dependency; see the [PR selection note](../reviews/2026-09-14-pr-selection.md).
 
 ## M0: Passing compatibility baseline and minimal CI
 
 **Files:** Create `tests/run.sh`, `tests/helpers/fake-zellij`, `tests/compat.sh`, `.github/workflows/test.yml`, and the verification ledger.
 
 - [ ] Implement runner selection/reporting, argument-preserving logs, watchdog cleanup, and independent capability profiles from the acceptance matrix.
-- [ ] Reuse #2's assertion ideas, but launch the actual wrapper from fake Zellij. Archived audit sources are references, not an unmodified maintained test suite.
+- [ ] Derive cases from the acceptance matrix and launch the actual wrapper from fake Zellij. #2's assertions and archived audit sources are optional historical references, not merge dependencies or an unmodified maintained test suite.
 - [ ] Add exactly these passing baseline cases: `protocol.deferred-split`, `protocol.deferred-window`, `protocol.inline-argv`, `protocol.fifo-send`, `protocol.synthetic-stdout`, `protocol.recorded-title`, `placement.first-leader`, `placement.next-live-sibling`, `placement.other-leader-anchor`, and `placement.capability-gate`. Full title/placeholder semantics and group-scoped listing enter at their fix milestones. Do not hide future failures as skipped baseline checks.
 - [ ] Add Ubuntu/current Bash and macOS/system Bash 3.2/current Bash jobs. Enforce the selected interpreter in both shim and wrapper. Run syntax per file and PR base-to-head whitespace validation; report known ShellCheck baseline findings until the clean M3 gate.
 - [ ] Run baseline locally, record versions/results, and commit `test: establish teammate protocol baseline and CI`.
@@ -113,7 +113,7 @@ The interrupt portion of #6 moves into its own core commit in M2c because superv
 - [ ] Require syntax, clean ShellCheck, full core suites, actual zsh, installed-copy tests, and PR-diff whitespace across Linux/macOS.
 - [ ] Document the supported command/capability matrix, v2 upgrade/rollback, session-wide teardown, explicit recovery, and development commands. Add unreleased notes with attribution.
 - [ ] Run all three live two-tab cases and interrupt PTY tests on the exact integration commit; record tool versions and observations.
-- [ ] Review the final base-to-head diff and scoped staging. Prepare #2/#5 reconciliation drafts without claiming the replacement already merged.
+- [ ] Review the final base-to-head diff and scoped staging. Check #2/#5's disposition; their proposed withdrawal does not require a replacement merge and does not retire the independently verified hardening requirements.
 
 **Gate:** All required checks pass, no unresolved P1 finding, and complete installed-copy/attached live evidence. Report authenticated Claude testing separately; stand-ins do not satisfy it.
 
@@ -144,14 +144,14 @@ The interrupt portion of #6 moves into its own core commit in M2c because superv
 
 | Source | Verified original identity | Treatment |
 |---|---|---|
-| #2 `41a94a7` / #5 `ab9b063` | Stanislav Cherepanov; identical trees | Incorporate reviewed intent once |
-| #6 `b71296f` | DeepTrial | Track interrupt, capture, and layout independently |
+| #2 `41a94a7` / #5 `ab9b063` | Stanislav Cherepanov; identical trees | Remove from merge queue; propose withdrawal; retain independently verified requirements |
+| #6 `b71296f` | DeepTrial | Correct interrupt in core; add corrected capture later; keep layout optional; never merge this head unchanged |
 | #7 `5120d78` | Maxim Rubchinsky; existing coauthor trailers | Preserve attribution/trailers when carrying original commits |
 | #8/#9 | Already merged in the audited base | Preserve behavior and reference in maintenance notes |
 
 - [ ] Use `cherry-pick -x` when retaining an original commit appropriately. Scoped rewrites name the source PR/hash and preserve author credit; do not misrepresent newly written tests as original contribution code.
-- [ ] Prepare public messages with actual replacement PR/commit IDs and incorporated/deferred components. Obtain authorization appropriate to remote actions in the implementation task.
-- [ ] After replacement merges, reconcile #2/#5; reconcile #7 after fish merges; reconcile #6 only when all components are merged or explicitly tracked. #3 and issue #4 are already closed in the audit snapshot.
+- [ ] For incorporated work, prepare public messages with actual replacement PR/commit IDs and incorporated/deferred components. For withdrawn drafts, state withdrawal without inventing a replacement. Obtain authorization appropriate to remote actions in the implementation task.
+- [ ] When the owner requests GitHub closure, close #2/#5 as withdrawn rather than implying their contents merged. Reconcile #7 after fish merges; reconcile #6 only when all components are merged or explicitly tracked. #3 and issue #4 are already closed in the audit snapshot.
 - [ ] Finalize changelog, supported matrix, evidence ledger, and branch disposition. No release tag is planned.
 
 ## Completion distinction

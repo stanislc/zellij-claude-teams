@@ -10,7 +10,7 @@ Read this design before the [execution plan](../plans/2026-09-14-repository-clea
 
 ## 1. Scope and selected approach
 
-Retain the Bash tmux adapter, Zellij panes, and one FIFO per waiting pane. Keep #8's deferred startup and #9's targeted placement. Stabilize the core before incorporating fish and the remaining optional features. Use the shared changes in #2/#5 once, with attribution, adapting their obsolete assumptions.
+Retain the Bash tmux adapter, Zellij panes, and one FIFO per waiting pane. Keep #8's deferred startup and #9's targeted placement. Stabilize the core before incorporating fish and the remaining optional features. Retire #2/#5 as merge candidates; preserve independently supported hardening requirements and credit any reused material. The [PR selection note](../reviews/2026-09-14-pr-selection.md) explains the updated disposition and why #6 needs corrected, independently tested components.
 
 The selected approach is staged consolidation. A targeting-only patch leaves shared-state and shell-lifecycle failures unresolved. A general tmux replacement or daemon rewrite would expand the project substantially. Neither is needed for the supported Agent Teams protocol.
 
@@ -145,7 +145,7 @@ Use this layout:
   N.result               # durable accepted/error receipt
 ```
 
-Compute the 48-byte ASCII slug using `LC_ALL=C` and #2's replacement/collapse rules, falling back to `default`. Append the POSIX cksum checksum and byte count. Compare existing `session.raw` byte-for-byte before joining: a collision must fail. This replaces the earlier plan's unspecified cross-shell hash format.
+Compute the ASCII slug using `LC_ALL=C`: replace every byte outside `[A-Za-z0-9_-]` with `-`, strip leading/trailing hyphens, collapse consecutive hyphens, then truncate to 48 bytes, falling back to `default` if empty. Append the POSIX cksum checksum and byte count. Compare existing `session.raw` byte-for-byte before joining: a collision must fail. This makes the contract self-contained without depending on the #2/#5 implementation.
 
 Resolve the existing runtime base with empty CDPATH and `pwd -P`, accepting macOS `/tmp` and `/var` aliases at that base. Reject symlink/non-directory objects below it at the per-user root, v2, and session levels. Verify current UID before chmod or reading content; require private directory mode 0700 and private regular state-file mode 0600. Use umask 077 inside helper operations and restore any caller umask.
 
@@ -275,6 +275,6 @@ Baseline CI runs syntax per file, the passing compatibility suite, and PR base-t
 
 Each implementation milestone records commit, actual tool versions, named tests, results, and limitations. The core gate includes Linux/macOS checks, installed-copy coverage, live attached two-tab input/placement/kill, and no unresolved P1 findings. An authenticated Claude conversation remains separately reported; absence must not be presented as a pass.
 
-Refresh GitHub state before implementation. Preserve source PR/commit attribution. Prepare concrete reconciliation drafts after replacement work is verified; mark #2/#5 superseded only after its replacement merges, and account for every retained/deferred part of #6. #3 and issue #4 are already closed in the audit snapshot. This design does not authorize remote messages, pushes, merges, closures, or a release.
+Refresh GitHub state before implementation. Preserve source PR/commit attribution. Remove #2/#5 from the merge queue and propose closing them as withdrawn when the owner requests it; do not claim a replacement has merged. Account for every retained/deferred part of #6, and reconcile #7 after its fish integration. #3 and issue #4 are already closed in the audit snapshot. This design does not authorize remote messages, pushes, merges, closures, or a release.
 
 There are no unresolved product decisions required to begin core development. Platform-sensitive process/PTY behavior is covered by explicit acceptance gates; a failed gate requires adjusting or narrowing that capability, not silently weakening a promise. Development starts only in the subsequent authorized implementation task.

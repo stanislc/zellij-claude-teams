@@ -9,7 +9,7 @@ This repository contains the decisions and evidence needed to close the planning
 1. [Detailed design](specs/2026-09-14-repository-cleanup-design.md): required behavior, state/protocol interfaces, lifecycle, failure policy, and scope.
 2. [Acceptance matrix](specs/2026-09-14-repository-cleanup-acceptance.md): named tests, observable outcomes, actual interpreter and live-PTY requirements.
 3. [Execution plan](plans/2026-09-14-repository-cleanup.md): dependency order, file ownership, commit boundaries, and contribution reconciliation.
-4. [Audit](reviews/2026-09-14-pr-audit.md) and [evidence JSON](reviews/2026-09-14-pr-audit-evidence.json): behavior observed before fixes.
+4. [PR selection](reviews/2026-09-14-pr-selection.md): comparison of #6–#9 and the decision to remove #2/#5 from the merge queue. [Audit](reviews/2026-09-14-pr-audit.md) and [evidence JSON](reviews/2026-09-14-pr-audit-evidence.json): behavior observed before fixes.
 5. [Archived audit-source guide](reviews/2026-09-14-audit-sources/README.md): preserved reproduction sources, hashes, snapshot prerequisites, and limitations.
 
 The detailed design governs proposed implementation; the plan sequences it. Audit results describe the old snapshot. The August design is historical where it conflicts. Planning completion must not be presented as completed development or a clean regression verdict.
@@ -31,10 +31,11 @@ The current documentation commit is the HEAD of the planning branch when this pa
 ## Design decisions to retain
 
 - Keep #8/#9; fix the reproduced late-input routing bug first.
+- Retire #2/#5 as merge candidates while retaining independently verified hardening requirements. Their proposed withdrawal is not a completed GitHub closure.
 - Use a shared Bash state helper and v2 namespace, per-pane environment, stable supervising wrapper, framed single-use delivery, and a durable acceptance receipt.
 - Preserve session-wide deactivation, monotonic IDs, and private ownership checks. No hot upgrades or automatic stale-lock/legacy-state deletion.
 - Enforce independent backend capabilities; prefer targeted operations. Preserve only the explicitly documented legacy fallback guarantees.
-- Establish CI with the baseline harness, then integrate the core coherently. Fish follows the core contract. #6's interrupt unit belongs before core acceptance; capture/layout remain independent later units.
+- Establish CI with the baseline harness, then integrate the core coherently. Fish follows the core contract and contains none of #6's additions. Include corrected #6 interrupt behavior before core acceptance, capture as a later feature, and layout as an optional independent unit; do not merge #6 unchanged.
 - Record real versions and tests. Fish and authenticated Claude were unavailable during the audit; stand-in commands do not establish a full Claude conversation pass.
 
 ## First development actions
