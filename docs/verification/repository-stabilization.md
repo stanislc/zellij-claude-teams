@@ -37,6 +37,10 @@ Further targeted RED/GREEN cases cover inherited activation with a rebuilt PATH 
 
 Local results: **16/16 fish, 18/18 core, and 5/5 release/installed-copy tests pass** under both Bash 3.2.57 and 5.3.15 with fish 4.9.3. The fish suite invokes real fish with isolated HOME/XDG/config/runtime roots, an argv/status-recording Claude stand-in, and installed deferred startup through the actual shared wrapper. Bash, zsh, and fish parsing checks, ShellCheck at error severity, and changed-line whitespace checks pass. Hosted fish results and release verification are recorded at closeout.
 
+The first integration [CI run](https://github.com/stanislc/zellij-claude-teams/actions/runs/34993210305) at `df64a7e74652714ec95b7c7cd4890a5bcc805a35` passed all three jobs, including fish 3.7.0 on Ubuntu and fish 4.9.2 on macOS. Its exact clean checkout also passed all three attached Zellij checks. Independent spec review then identified two missing cases despite the green suite: deactivating another shell after shared state removal, and restoring a genuinely unset global fish PATH.
+
+Both review findings were reproduced before fixing them. Deactivation now skips cleanup for absent canonical state while retaining unsafe-object rejection, and fish explicitly erases global PATH when restoring an unset baseline. The expanded suite also persists six inherited Bash-to-fish/fish-to-Bash TMUX/PANE restoration cases. Fresh local verification after the fixes: **20/20 fish, 18/18 core, and 5/5 release tests under each Bash interpreter**, plus parsing, ShellCheck error severity, and whitespace checks.
+
 ## Limits and deferred work
 
 No authenticated full Claude conversation was run; live cases use harmless controlled processes. Older Zellij capability profiles are simulated rather than installed end to end. PID reuse remains a limitation of the retained state format. The late-write fallback on older Zellij deliberately focuses the validated pane and still cannot prevent a user click racing the write. The broader state namespace, lock, environment-snapshot, and respawn serialization work remains outside this release scope. #6 is awaiting its author's update.

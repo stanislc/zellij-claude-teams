@@ -21,16 +21,24 @@ __zellij_tmux_shim_deactivate() {
     case "$_zct_tail" in
         ''|.|..|*/*) echo "zellij-tmux-shim: ERROR: unsafe session state path" >&2; return 1 ;;
     esac
-    if [ -L "$_zct_root" ] || [ -L "$_zct_state" ] || [ ! -d "$_zct_root" ] || [ ! -d "$_zct_state" ]; then
+    if [ -L "$_zct_root" ] || [ -L "$_zct_state" ]; then
         echo "zellij-tmux-shim: ERROR: unsafe session state directory" >&2
         return 1
     fi
-    _zct_owner=$(PATH=/usr/bin:/bin stat -c '%u' "$_zct_root" 2>/dev/null || PATH=/usr/bin:/bin stat -f '%u' "$_zct_root" 2>/dev/null)
-    [ "$_zct_owner" = "$_zct_uid" ] || { echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2; return 1; }
-    _zct_owner=$(PATH=/usr/bin:/bin stat -c '%u' "$_zct_state" 2>/dev/null || PATH=/usr/bin:/bin stat -f '%u' "$_zct_state" 2>/dev/null)
-    [ "$_zct_owner" = "$_zct_uid" ] || { echo "zellij-tmux-shim: ERROR: session state not owned by current user" >&2; return 1; }
+    _zct_cleanup=0
+    if [ -e "$_zct_root" ]; then
+        [ -d "$_zct_root" ] || { echo "zellij-tmux-shim: ERROR: unsafe state root" >&2; return 1; }
+        _zct_owner=$(PATH=/usr/bin:/bin stat -c '%u' "$_zct_root" 2>/dev/null || PATH=/usr/bin:/bin stat -f '%u' "$_zct_root" 2>/dev/null)
+        [ "$_zct_owner" = "$_zct_uid" ] || { echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2; return 1; }
+        if [ -e "$_zct_state" ]; then
+            [ -d "$_zct_state" ] || { echo "zellij-tmux-shim: ERROR: unsafe session state directory" >&2; return 1; }
+            _zct_owner=$(PATH=/usr/bin:/bin stat -c '%u' "$_zct_state" 2>/dev/null || PATH=/usr/bin:/bin stat -f '%u' "$_zct_state" 2>/dev/null)
+            [ "$_zct_owner" = "$_zct_uid" ] || { echo "zellij-tmux-shim: ERROR: session state not owned by current user" >&2; return 1; }
+            _zct_cleanup=1
+        fi
+    fi
 
-    (
+    if [ "$_zct_cleanup" -eq 1 ]; then (
         PATH=/usr/bin:/bin
         export PATH
         _zct_list="$_zct_state/.deactivate-pids.$$"
@@ -46,6 +54,7 @@ __zellij_tmux_shim_deactivate() {
         rm -f "$_zct_list"
         rm -rf "$_zct_state"
     ) || return 1
+    fi
 
     if [ -n "${ZELLIJ_TMUX_SHIM_SAVED_PATH_PRESENT+x}" ]; then
         if [ "$ZELLIJ_TMUX_SHIM_SAVED_PATH_PRESENT" = 1 ]; then export PATH=$ZELLIJ_TMUX_SHIM_SAVED_PATH_VALUE; else unset PATH; fi

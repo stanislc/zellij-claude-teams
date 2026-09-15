@@ -23,40 +23,56 @@ function __zellij_tmux_shim_deactivate
         echo "zellij-tmux-shim: ERROR: unsafe session state path" >&2
         return 1
     end
-    if test -L "$shim_root"; or test -L "$state_dir"; or not test -d "$shim_root"; or not test -d "$state_dir"
+    if test -L "$shim_root"; or test -L "$state_dir"
         echo "zellij-tmux-shim: ERROR: unsafe session state directory" >&2
         return 1
     end
-    set -l owner (command stat -c '%u' "$shim_root" 2>/dev/null)
-    test -n "$owner"; or set owner (command stat -f '%u' "$shim_root" 2>/dev/null)
-    if test "$owner" != "$uid"
-        echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2
-        return 1
-    end
-    set owner (command stat -c '%u' "$state_dir" 2>/dev/null)
-    test -n "$owner"; or set owner (command stat -f '%u' "$state_dir" 2>/dev/null)
-    if test "$owner" != "$uid"
-        echo "zellij-tmux-shim: ERROR: session state not owned by current user" >&2
-        return 1
-    end
-    for pidfile in "$state_dir"/*.pid
-        set -l pid (command cat "$pidfile" 2>/dev/null)
-        if string match -rq '^[1-9][0-9]*$' -- "$pid"; and kill -0 "$pid" 2>/dev/null
-            kill "$pid" 2>/dev/null
+    set -l cleanup 0
+    if test -e "$shim_root"
+        if not test -d "$shim_root"
+            echo "zellij-tmux-shim: ERROR: unsafe state root" >&2
+            return 1
+        end
+        set -l owner (command stat -c '%u' "$shim_root" 2>/dev/null)
+        test -n "$owner"; or set owner (command stat -f '%u' "$shim_root" 2>/dev/null)
+        if test "$owner" != "$uid"
+            echo "zellij-tmux-shim: ERROR: state root not owned by current user" >&2
+            return 1
+        end
+        if test -e "$state_dir"
+            if not test -d "$state_dir"
+                echo "zellij-tmux-shim: ERROR: unsafe session state directory" >&2
+                return 1
+            end
+            set owner (command stat -c '%u' "$state_dir" 2>/dev/null)
+            test -n "$owner"; or set owner (command stat -f '%u' "$state_dir" 2>/dev/null)
+            if test "$owner" != "$uid"
+                echo "zellij-tmux-shim: ERROR: session state not owned by current user" >&2
+                return 1
+            end
+            set cleanup 1
         end
     end
-    command rm -rf "$state_dir"; or return 1
+    if test $cleanup -eq 1
+        for pidfile in "$state_dir"/*.pid
+            set -l pid (command cat "$pidfile" 2>/dev/null)
+            if string match -rq '^[1-9][0-9]*$' -- "$pid"; and kill -0 "$pid" 2>/dev/null
+                kill "$pid" 2>/dev/null
+            end
+        end
+        command rm -rf "$state_dir"; or return 1
+    end
 
     if set -q ZELLIJ_TMUX_SHIM_SAVED_PATH_PRESENT
         if test "$ZELLIJ_TMUX_SHIM_SAVED_PATH_PRESENT" = 1
             set -gx PATH (string split : -- "$ZELLIJ_TMUX_SHIM_SAVED_PATH_VALUE")
         else
-            set -e PATH
+            set -e -g PATH
         end
     else if test "$ZELLIJ_TMUX_SHIM_ORIG_PATH_SET" != 0
         set -gx PATH $ZELLIJ_TMUX_SHIM_ORIG_PATH
     else
-        set -e PATH
+        set -e -g PATH
     end
     if test "$ZELLIJ_TMUX_SHIM_SAVED_TMUX_PRESENT" = 1
         set -gx TMUX "$ZELLIJ_TMUX_SHIM_SAVED_TMUX_VALUE"

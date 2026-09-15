@@ -36,7 +36,7 @@ if test $show_help -eq 1
     echo
     echo "Options:"
     echo "  --uninstall   Remove the shim and the claude-zellij function"
-    echo "  --quiet       Only report errors"
+    echo "  --quiet       Skip the fish installation confirmation"
     echo "  --version     Print the project release version without installing"
     echo "  --help        Show this help message"
     exit 0

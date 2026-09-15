@@ -26,6 +26,7 @@ Agent panes are named after their role and stack vertically on the right.
 
 - **Zellij** 0.40+ (tested on 0.45.1). Focus-independent pane placement (multi-tab safe) needs 0.44.1+; older versions still work but place panes next to the focused pane.
 - **Bash** 3.2+ for the shared runtime, including when your interactive shell is zsh or fish
+- **Fish** is optional; the fish adapter is tested with 3.7.0 on Linux and 4.9.2/4.9.3 on macOS
 - **Claude Code** with Agent Teams support (contributors report tests with 2.1.260 and 2.1.268; this release's checks use controlled stand-ins, not an authenticated conversation; see [Claude Code notes](#claude-code-notes))
 
 ## Installation

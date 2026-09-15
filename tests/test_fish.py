@@ -257,6 +257,29 @@ class FishTests(unittest.TestCase):
                 self.assertNotIn("TMUX", final)
                 self.assertNotIn("TMUX_PANE", final)
 
+    def test_fish_round_trip_truly_unset_path_for_saved_and_legacy_state(self):
+        primary_result, primary = self.fish_env(
+            "set -e PATH; source " + shlex.quote(str(ACTIVATE_FISH)) + "; source " + shlex.quote(str(DEACTIVATE_FISH))
+        )
+        self.assertEqual(primary_result.returncode, 0, primary_result.stderr.decode())
+        self.assertEqual(primary.get("ZCT_STATUS"), "0", primary_result.stderr.decode())
+        self.assertNotIn("PATH", primary)
+
+        runtime = self.root / "legacy unset path"
+        state = runtime / ("zellij-tmux-shim-" + str(os.getuid())) / "shared-session"
+        state.mkdir(parents=True)
+        legacy_env = {
+            **self.env,
+            "XDG_RUNTIME_DIR": str(runtime),
+            "ZELLIJ_TMUX_SHIM_ACTIVE": "1",
+            "ZELLIJ_TMUX_SHIM_STATE": str(state),
+            "ZELLIJ_TMUX_SHIM_ORIG_PATH_SET": "0",
+        }
+        legacy_result, legacy = self.fish_env("source " + shlex.quote(str(DEACTIVATE_FISH)), legacy_env)
+        self.assertEqual(legacy_result.returncode, 0, legacy_result.stderr.decode())
+        self.assertEqual(legacy.get("ZCT_STATUS"), "0", legacy_result.stderr.decode())
+        self.assertNotIn("PATH", legacy)
+
     def test_fish_activation_preserves_callers_umask(self):
         script = (
             "umask 027; set -l before (umask); "
@@ -316,6 +339,103 @@ class FishTests(unittest.TestCase):
         other = {**self.env, "ZELLIJ_SESSION_NAME": "other-session"}
         _, other_env = self.fish_env("source " + shlex.quote(str(ACTIVATE_FISH)), other)
         self.assertNotEqual(other_env["ZELLIJ_TMUX_SHIM_STATE"], bash_env["ZELLIJ_TMUX_SHIM_STATE"])
+
+    def test_cross_shell_inherited_deactivation_restores_tmux_presence_and_values(self):
+        variants = (
+            ("unset", None, None),
+            ("empty", "", ""),
+            ("value", "prior tmux", "prior pane"),
+        )
+        directions = (("bash", "fish"), ("fish", "bash"))
+        for activating, deactivating in directions:
+            for variant, tmux, pane in variants:
+                with self.subTest(activating=activating, deactivating=deactivating, variant=variant):
+                    runtime = self.root / (activating + "-to-" + deactivating + "-" + variant)
+                    runtime.mkdir()
+                    env = {**self.env, "XDG_RUNTIME_DIR": str(runtime), "PATH": "/usr/bin:/bin"}
+                    env.pop("TMUX", None)
+                    env.pop("TMUX_PANE", None)
+                    if tmux is not None:
+                        env["TMUX"] = tmux
+                        env["TMUX_PANE"] = pane
+                    if activating == "bash":
+                        activated_result, activated = self.bash_env(". " + shlex.quote(str(ACTIVATE_SH)), env)
+                    else:
+                        activated_result, activated = self.fish_env("source " + shlex.quote(str(ACTIVATE_FISH)), env)
+                    self.assertEqual(activated.get("ZCT_STATUS"), "0", activated_result.stderr.decode())
+                    if deactivating == "bash":
+                        deactivated_result, deactivated = self.bash_env(". " + shlex.quote(str(DEACTIVATE_SH)), activated)
+                    else:
+                        deactivated_result, deactivated = self.fish_env("source " + shlex.quote(str(DEACTIVATE_FISH)), activated)
+                    self.assertEqual(deactivated.get("ZCT_STATUS"), "0", deactivated_result.stderr.decode())
+                    self.assertEqual(deactivated.get("PATH"), "/usr/bin:/bin")
+                    if tmux is None:
+                        self.assertNotIn("TMUX", deactivated)
+                        self.assertNotIn("TMUX_PANE", deactivated)
+                    else:
+                        self.assertEqual(deactivated.get("TMUX"), tmux)
+                        self.assertEqual(deactivated.get("TMUX_PANE"), pane)
+
+    def test_shared_session_can_be_deactivated_by_both_activated_shells(self):
+        for first, second in (("bash", "fish"), ("fish", "bash")):
+            with self.subTest(first=first, second=second):
+                runtime = self.root / ("shared removal " + first)
+                runtime.mkdir()
+                env = {**self.env, "XDG_RUNTIME_DIR": str(runtime), "PATH": "/usr/bin:/bin", "TMUX": "before", "TMUX_PANE": "pane"}
+                activated = {}
+                for shell in ("bash", "fish"):
+                    if shell == "bash":
+                        result, values = self.bash_env(". " + shlex.quote(str(ACTIVATE_SH)), env)
+                    else:
+                        result, values = self.fish_env("source " + shlex.quote(str(ACTIVATE_FISH)), env)
+                    self.assertEqual(values.get("ZCT_STATUS"), "0", result.stderr.decode())
+                    activated[shell] = values
+
+                if first == "bash":
+                    first_result, first_values = self.bash_env(". " + shlex.quote(str(DEACTIVATE_SH)), activated[first])
+                else:
+                    first_result, first_values = self.fish_env("source " + shlex.quote(str(DEACTIVATE_FISH)), activated[first])
+                self.assertEqual(first_values.get("ZCT_STATUS"), "0", first_result.stderr.decode())
+
+                if second == "bash":
+                    second_result, second_values = self.bash_env(". " + shlex.quote(str(DEACTIVATE_SH)), activated[second])
+                else:
+                    second_result, second_values = self.fish_env("source " + shlex.quote(str(DEACTIVATE_FISH)), activated[second])
+                self.assertEqual(second_values.get("ZCT_STATUS"), "0", second_result.stderr.decode())
+                self.assertEqual(second_values.get("PATH"), "/usr/bin:/bin")
+                self.assertEqual(second_values.get("TMUX"), "before")
+                self.assertEqual(second_values.get("TMUX_PANE"), "pane")
+                self.assertNotIn("ZELLIJ_TMUX_SHIM_ACTIVE", second_values)
+
+    def test_deactivation_restores_environment_when_canonical_root_is_already_absent(self):
+        for shell in ("bash", "fish"):
+            with self.subTest(shell=shell):
+                runtime = self.root / (shell + " absent root")
+                state = runtime / ("zellij-tmux-shim-" + str(os.getuid())) / "shared-session"
+                env = {
+                    **self.env,
+                    "XDG_RUNTIME_DIR": str(runtime),
+                    "PATH": str(self.data / "zellij-tmux-shim" / "bin") + ":/usr/bin:/bin",
+                    "TMUX": "fake",
+                    "TMUX_PANE": "%0",
+                    "ZELLIJ_TMUX_SHIM_ACTIVE": "1",
+                    "ZELLIJ_TMUX_SHIM_STATE": str(state),
+                    "ZELLIJ_TMUX_SHIM_SAVED_PATH_PRESENT": "1",
+                    "ZELLIJ_TMUX_SHIM_SAVED_PATH_VALUE": "/usr/bin:/bin",
+                    "ZELLIJ_TMUX_SHIM_SAVED_TMUX_PRESENT": "1",
+                    "ZELLIJ_TMUX_SHIM_SAVED_TMUX_VALUE": "before",
+                    "ZELLIJ_TMUX_SHIM_SAVED_TMUX_PANE_PRESENT": "0",
+                    "ZELLIJ_TMUX_SHIM_SAVED_TMUX_PANE_VALUE": "",
+                }
+                if shell == "bash":
+                    result, restored = self.bash_env(". " + shlex.quote(str(DEACTIVATE_SH)), env)
+                else:
+                    result, restored = self.fish_env("source " + shlex.quote(str(DEACTIVATE_FISH)), env)
+                self.assertEqual(restored.get("ZCT_STATUS"), "0", result.stderr.decode())
+                self.assertEqual(restored.get("PATH"), "/usr/bin:/bin")
+                self.assertEqual(restored.get("TMUX"), "before")
+                self.assertNotIn("TMUX_PANE", restored)
+                self.assertNotIn("ZELLIJ_TMUX_SHIM_ACTIVE", restored)
 
     def test_zsh_repeated_activation_and_deactivation_restore_saved_environment(self):
         original_path = "/usr/bin:/bin"
@@ -560,9 +680,13 @@ CASE_METHODS = {
     "install-errors": "test_fish_installer_propagates_function_copy_and_remove_errors",
     "path": "test_bash_and_fish_reactivation_preserve_path_and_saved_environment",
     "roundtrip": "test_bash_and_fish_round_trip_empty_and_unset_environment",
+    "unset-path": "test_fish_round_trip_truly_unset_path_for_saved_and_legacy_state",
     "umask": "test_fish_activation_preserves_callers_umask",
     "guards": "test_bash_and_fish_guards_and_init_failures_do_not_mutate_environment",
     "sessions": "test_bash_and_fish_share_sessions_and_isolate_distinct_sessions",
+    "cross-shell-env": "test_cross_shell_inherited_deactivation_restores_tmux_presence_and_values",
+    "shared-deactivate": "test_shared_session_can_be_deactivated_by_both_activated_shells",
+    "absent-root": "test_deactivation_restores_environment_when_canonical_root_is_already_absent",
     "zsh-lifecycle": "test_zsh_repeated_activation_and_deactivation_restore_saved_environment",
     "cleanup": "test_bash_and_fish_cleanup_dead_records_but_preserve_live_session_files",
     "live-lock": "test_bash_and_fish_preserve_live_allocator_lock_before_wrapper_registration",
