@@ -1,5 +1,7 @@
 # Stabilization acceptance matrix
 
+**Scope update, 2026-09-15:** This is the catalogue for the earlier broad design. The [active selective maintenance plan](../plans/2026-09-15-selective-maintenance.md) selects current work and relevant checks. Its focused task does not require implementing all cases, the full v2 protocol, fish, or every #6 component. The complete suite/gate definitions below apply only if that broader scope is selected later.
+
 This is the test specification for the [detailed design](2026-09-14-repository-cleanup-design.md), not a report of tests already implemented. Historical results are in the [audit](../reviews/2026-09-14-pr-audit.md).
 
 ## Harness contract

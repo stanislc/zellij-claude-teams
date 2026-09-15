@@ -1,6 +1,6 @@
 # Repository stabilization design
 
-**Status:** Design and planning deliverable; implementation has not started.
+**Status:** Deferred architectural design; implementation has not started. The [2026-09-15 selective maintenance plan](../plans/2026-09-15-selective-maintenance.md) governs current scope. This design is a reference for a later explicit decision, not a required v2 migration or prerequisite for focused contributor fixes.
 
 **Baseline:** Production tree at `93ed78831b0745d0cfa3b33ba085298f8855ef93`, containing merged #8/#9. Local integration is `8e4e33d`; the first audit/plan commit is `80beff5`.
 

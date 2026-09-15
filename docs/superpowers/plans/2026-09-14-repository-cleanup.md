@@ -1,5 +1,7 @@
 # Repository Cleanup Implementation Plan
 
+**Scope update, 2026-09-15:** The [selective maintenance plan](2026-09-15-selective-maintenance.md) supersedes this automatic M0–M6 sequence. This document is retained as a broader implementation option. Fish, #6 features, and the v2 transition are not mandatory current work. #2/#5 have since been closed and an update requested on #6; use the active plan for current disposition and authorization.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Checkboxes track development, which has not started. Follow the active task's delegation rules and assign nonoverlapping file ownership for parallel work.
 
 **Goal:** Preserve #8/#9, complete safe command delivery and state handling, integrate fish, and account for each remaining contribution in reviewable stages.
