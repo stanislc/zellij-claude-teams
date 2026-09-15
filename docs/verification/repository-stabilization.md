@@ -41,6 +41,8 @@ The first integration [CI run](https://github.com/stanislc/zellij-claude-teams/a
 
 Both review findings were reproduced before fixing them. Deactivation now skips cleanup for absent canonical state while retaining unsafe-object rejection, and fish explicitly erases global PATH when restoring an unset baseline. The expanded suite also persists six inherited Bash-to-fish/fish-to-Bash TMUX/PANE restoration cases. Fresh local verification after the fixes: **20/20 fish, 18/18 core, and 5/5 release tests under each Bash interpreter**, plus parsing, ShellCheck error severity, and whitespace checks.
 
+Spec re-review passed and independently confirmed actual status 0 for both repaired cases. A final harness regression then caught inherited `ZCT_STATUS` masking a later operation's status. The helper now removes that internal marker from inherited environments before each run; **21/21 fish tests pass under both Bash versions**, including explicit failing-operation status checks. The production fixes at `19e83045fa50e556549a822a3364875e50eb3ba7` also passed all three [CI jobs](https://github.com/stanislc/zellij-claude-teams/actions/runs/34993880440).
+
 ## Limits and deferred work
 
 No authenticated full Claude conversation was run; live cases use harmless controlled processes. Older Zellij capability profiles are simulated rather than installed end to end. PID reuse remains a limitation of the retained state format. The late-write fallback on older Zellij deliberately focuses the validated pane and still cannot prevent a user click racing the write. The broader state namespace, lock, environment-snapshot, and respawn serialization work remains outside this release scope. #6 is awaiting its author's update.

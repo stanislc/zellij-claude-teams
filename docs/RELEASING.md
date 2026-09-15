@@ -14,3 +14,5 @@ For each release:
 6. Read back the draft target and uploaded assets. Publishing a release is a separate explicit action; record its final URL and verify its tag when authorized.
 
 The baseline `v0.1.0` is an exception to the VERSION-file requirement: its source archive deliberately preserves the exact older tree without adding metadata retroactively. The tag and release notes identify it. Existing teams must be deactivated before updating the installed shim; do not upgrade a running FIFO/wrapper session in place.
+
+For a downgrade, deactivate and uninstall using the current checkout before installing the older tag. Fish users should run the current `fish install.fish --uninstall` so the autoloaded function is removed too. Installers copy their own files over an existing installation; copying an older release alone would leave newer fish files behind. Prefer `v0.1.1` when rolling back fish support while retaining the compatibility fixes.

@@ -81,13 +81,26 @@ class FishTests(unittest.TestCase):
         self.temp.cleanup()
 
     def run_cmd(self, argv, env=None, timeout=15):
+        command_env = dict(self.env if env is None else env)
+        command_env.pop("ZCT_STATUS", None)
         return subprocess.run(
             argv,
-            env=self.env if env is None else env,
+            env=command_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
         )
+
+    def test_shell_env_helpers_report_fresh_status_over_inherited_value(self):
+        inherited = {**self.env, "ZCT_STATUS": "0"}
+        for shell in ("bash", "fish"):
+            with self.subTest(shell=shell):
+                if shell == "bash":
+                    result, values = self.bash_env("false", inherited)
+                else:
+                    result, values = self.fish_env("false", inherited)
+                self.assertEqual(result.returncode, 0, result.stderr.decode())
+                self.assertEqual(values.get("ZCT_STATUS"), "1")
 
     def bash_env(self, body, env=None):
         script = body + "; _zct_status=$?; /usr/bin/printf 'ZCT_STATUS=%s\\0' \"$_zct_status\"; /usr/bin/env -0"
@@ -675,6 +688,7 @@ class FishTests(unittest.TestCase):
 
 
 CASE_METHODS = {
+    "harness-status": "test_shell_env_helpers_report_fresh_status_over_inherited_value",
     "install": "test_fish_installer_install_update_uninstall_isolated",
     "options": "test_installers_validate_options_and_read_only_actions_before_writes",
     "install-errors": "test_fish_installer_propagates_function_copy_and_remove_errors",
