@@ -9,8 +9,8 @@ Start with the [selective maintenance plan](plans/2026-09-15-selective-maintenan
 - Keep merged #8/#9 and protect their startup, naming, placement, and focus behavior.
 - #2/#5 are closed as outdated, withdrawn drafts. Independently reproduced bugs remain valid work candidates.
 - DeepTrial has been [asked to update #6](https://github.com/stanislc/zellij-claude-teams/pull/6#issuecomment-5681941227). Review a revised contribution selectively; no commitment to include every feature.
-- #7 remains open and deferred. Its fish support is absent from main and was not included by #8/#9. A future fish scope decision can accept or reject it on that basis.
-- The next development task is a focused regression harness plus fixes for late-input routing and empty-session zsh deactivation. The full v2 migration is not part of that task.
+- Fish support is selected. Keep #7 open as the source contribution, update it against the maintained core, and validate real fish behavior before integration. Its functionality was not included by #8/#9.
+- Development has two reviewable stages: the regression harness and focused late-input/zsh fixes, then fish integration from #7. The full v2 migration and #6 features are outside this task.
 
 ## Read in this order
 

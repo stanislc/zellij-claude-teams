@@ -1,6 +1,6 @@
 # PR selection after the planning review
 
-**Subsequent update, 2026-09-15:** The [active selective plan](../plans/2026-09-15-selective-maintenance.md) supersedes the proposed disposition below. #2/#5 are now closed, DeepTrial has been asked to revise #6 without a commitment to accept all features, and #7 is deferred because fish is a separate scope choice. The feature comparison and reviewed code observations below remain applicable to their recorded snapshots.
+**Subsequent update, 2026-09-15:** The [active selective plan](../plans/2026-09-15-selective-maintenance.md) supersedes the proposed disposition below. #2/#5 are now closed, DeepTrial has been asked to revise #6 without a commitment to accept all features, and the owner has selected fish support from #7 after the focused compatibility fixes. The feature comparison and reviewed code observations below remain applicable to their recorded snapshots.
 
 This note records the follow-up discussion about #6 versus #7/#8/#9 and withdrawing the owner's #2/#5 drafts. It updates the proposed PR disposition in the earlier [audit](2026-09-14-pr-audit.md); it does not change historical test results. GitHub heads and states were rechecked on 2026-09-14 and match the audited snapshots. No PR has been closed or merged during this follow-up.
 
