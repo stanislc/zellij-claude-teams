@@ -1,6 +1,6 @@
 # Selective compatibility and PR maintenance plan
 
-**Status:** Development authorized on 2026-09-15. PR administration below is complete; the compatibility stage is verified, and fish integration follows.
+**Status:** Selected development complete on 2026-09-15. Compatibility maintenance and fish integration are implemented and independently reviewed. The steps below record the selected scope; do not restart them. See the [verification ledger](../../verification/repository-stabilization.md) for results and prepared release references.
 
 The owner's subsequent request authorizes implementation, version control, and release preparation. Preserve the exact pre-development main as `v0.1.0`, save compatibility maintenance as `v0.1.1`, and fish support as `v0.2.0`. Prepare draft releases and a review branch with CI; publishing releases and merging main remain separate actions. This supersedes the earlier local-only stopping instructions below.
 
@@ -10,10 +10,10 @@ This plan supersedes the automatic M0–M6 progression in the [September 14 plan
 
 | Item | Current disposition | Next action |
 |---|---|---|
-| #8/#9 | Already merged; retain startup, naming, leader-relative placement, and focus behavior | Protect with regression checks; fix independently reproduced defects |
+| #8/#9 | Retained and protected by maintained core, installed-copy, and attached checks | Re-run relevant checks when future changes affect these behaviors |
 | [#2](https://github.com/stanislc/zellij-claude-teams/pull/2) / [#5](https://github.com/stanislc/zellij-claude-teams/pull/5) | Closed as withdrawn on 2026-09-15; neither merged | No port or replacement merge obligation; keep independently supported bug reports |
 | [#6](https://github.com/stanislc/zellij-claude-teams/pull/6) | Open at `b71296f6fece8f2d96427ede5ecf2d2199a1aab4`; [update requested](https://github.com/stanislc/zellij-claude-teams/pull/6#issuecomment-5681941227) | Review a revised patch when available; no promise to include every feature |
-| [#7](https://github.com/stanislc/zellij-claude-teams/pull/7) | Open at the last check, `5120d7896e85cae752589d16b08b1cbee0d0fd02`; fish support selected by the owner | Update/review against the maintained core, then integrate with real fish tests and preserved attribution |
+| [#7](https://github.com/stanislc/zellij-claude-teams/pull/7) | Source `5120d7896e85cae752589d16b08b1cbee0d0fd02` adapted into the v0.2.0 review branch with attribution and tested compatibility fixes | Original contributor PR remains unmerged/unclosed by this work |
 
 Main was rechecked at `93ed78831b0745d0cfa3b33ba085298f8855ef93`. It has no `activate.fish`, `deactivate.fish`, `install.fish`, or `functions/claude-zellij.fish`. #8/#9 change the Bash core; they do not subsume #7's fish adapters and installation. The owner has now selected fish support. Keep #7 as the source contribution, subject to updating and validation rather than merging the stale head automatically.
 

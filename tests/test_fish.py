@@ -48,8 +48,13 @@ class FishTests(unittest.TestCase):
         self.runtime = self.root / "runtime with spaces"
         for path in (self.home, self.data, self.config, self.runtime):
             path.mkdir(mode=0o700)
+        clean_env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("ZELLIJ_TMUX_SHIM_")
+        }
         self.env = {
-            **os.environ,
+            **clean_env,
             "HOME": str(self.home),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CONFIG_HOME": str(self.config),
@@ -101,6 +106,35 @@ class FishTests(unittest.TestCase):
                     result, values = self.fish_env("false", inherited)
                 self.assertEqual(result.returncode, 0, result.stderr.decode())
                 self.assertEqual(values.get("ZCT_STATUS"), "1")
+
+    def test_fixture_strips_inherited_active_shim_state(self):
+        synthetic_dir = self.root / "reviewer-synthetic-active-state"
+        synthetic_dir.mkdir()
+        marker = synthetic_dir / "sentinel"
+        marker.write_text("untouched\n", encoding="utf-8")
+        child_env = {
+            **self.env,
+            "ZELLIJ_TMUX_SHIM_ACTIVE": "1",
+            "ZELLIJ_TMUX_SHIM_DIR": str(self.root / "reviewer-synthetic-active-shim"),
+            "ZELLIJ_TMUX_SHIM_STATE": str(synthetic_dir),
+            "ZELLIJ_TMUX_SHIM_SAVED_PATH_VALUE": "synthetic snapshot",
+            "ZELLIJ_TMUX_SHIM_DEBUG": "1",
+        }
+        result = self.run_cmd(
+            [BASH, str(ROOT / "tests" / "run.sh"), "--suite", "fish", "--case", "isolation-probe"],
+            env=child_env,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout.decode() + result.stderr.decode())
+        self.assertEqual(marker.read_text(encoding="utf-8"), "untouched\n")
+        self.assertEqual([path.name for path in synthetic_dir.iterdir()], ["sentinel"])
+
+    def probe_fixture_isolation(self):
+        leaked = sorted(key for key in self.env if key.startswith("ZELLIJ_TMUX_SHIM_"))
+        self.assertEqual(leaked, [])
+        result, activated = self.bash_env(". " + shlex.quote(str(ACTIVATE_SH)))
+        self.assertEqual(activated.get("ZCT_STATUS"), "0", result.stderr.decode())
+        expected = self.runtime / ("zellij-tmux-shim-" + str(os.getuid())) / "shared-session"
+        self.assertEqual(activated.get("ZELLIJ_TMUX_SHIM_STATE"), str(expected))
 
     def bash_env(self, body, env=None):
         script = body + "; _zct_status=$?; /usr/bin/printf 'ZCT_STATUS=%s\\0' \"$_zct_status\"; /usr/bin/env -0"
@@ -688,6 +722,8 @@ class FishTests(unittest.TestCase):
 
 
 CASE_METHODS = {
+    "harness-isolation": "test_fixture_strips_inherited_active_shim_state",
+    "isolation-probe": "probe_fixture_isolation",
     "harness-status": "test_shell_env_helpers_report_fresh_status_over_inherited_value",
     "install": "test_fish_installer_install_update_uninstall_isolated",
     "options": "test_installers_validate_options_and_read_only_actions_before_writes",

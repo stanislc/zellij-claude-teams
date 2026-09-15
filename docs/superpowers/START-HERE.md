@@ -1,6 +1,6 @@
 # Repository maintenance: development handoff
 
-**Status:** Development and versioned release preparation authorized on 2026-09-15. Compatibility maintenance is verified; fish integration follows. See the [verification ledger](../verification/repository-stabilization.md) for results.
+**Status:** Selected development completed and independently reviewed on 2026-09-15. Compatibility maintenance and fish integration are implemented on `stan/compatibility-and-fish`. See the [verification ledger](../verification/repository-stabilization.md) for versioned results, release references, and limitations.
 
 Start with the [selective maintenance plan](plans/2026-09-15-selective-maintenance.md). It governs current work and includes a fresh-task prompt. The earlier broad M0–M6 plan and v2 design are reference options; do not execute them automatically.
 
@@ -9,8 +9,8 @@ Start with the [selective maintenance plan](plans/2026-09-15-selective-maintenan
 - Keep merged #8/#9 and protect their startup, naming, placement, and focus behavior.
 - #2/#5 are closed as outdated, withdrawn drafts. Independently reproduced bugs remain valid work candidates.
 - DeepTrial has been [asked to update #6](https://github.com/stanislc/zellij-claude-teams/pull/6#issuecomment-5681941227). Review a revised contribution selectively; no commitment to include every feature.
-- Fish support is selected. Keep #7 open as the source contribution, update it against the maintained core, and validate real fish behavior before integration. Its functionality was not included by #8/#9.
-- Development has two reviewable stages: the regression harness and focused late-input/zsh fixes, then fish integration from #7. The full v2 migration and #6 features are outside this task.
+- Fish support from #7 has been adapted onto the maintained core with contributor credit and real fish tests. The contributor's original PR has not been merged or closed by this work. Its functionality was not included by #8/#9.
+- Both development stages are complete: the regression harness and focused late-input/zsh fixes, followed by fish integration and lifecycle corrections. The full v2 migration and #6 features remain deferred.
 
 ## Read in this order
 
@@ -35,10 +35,10 @@ The [v2 design](specs/2026-09-14-repository-cleanup-design.md) and [former execu
 
 The table records the planning baseline. Development uses `stan/compatibility-and-fish`, carrying these documents. Inspect current git status and the verification ledger for newer production changes; do not reset user work to force the recorded snapshot. Use scoped commits and append results without rewriting historical evidence.
 
-The audit did not have fish or an authenticated Claude executable available. Harmless stand-in commands exercised the real wrapper/Zellij, but do not establish a full Claude conversation pass. Record unavailable checks explicitly in future work.
+The historical audit did not have fish or an authenticated Claude executable. Development added real fish checks on macOS/Linux and attached Zellij checks. Harmless stand-in commands exercise the real wrapper/Zellij; an authenticated Claude conversation remains unverified. Record unavailable checks explicitly in future work.
 
 ## Closeout boundary
 
-The planning package was committed before development. The owner subsequently requested implementation and versioned release preparation. The exact baseline is preserved as `v0.1.0`; compatibility maintenance uses `v0.1.1`, and fish support uses `v0.2.0`. Prepare draft releases and a review branch with CI. No additional PR merge, contributor-PR closure, release publication, or automatic monitoring is implied.
+The planning package was committed before development. The exact baseline is preserved as `v0.1.0`; compatibility maintenance uses `v0.1.1`, and fish support uses `v0.2.0`. The review branch and draft release series provide the handoff. Main merges and release publication remain separate actions; no automatic monitoring was created.
 
-After development closeout, a fresh task can use the verification ledger and active plan without relying on this conversation.
+This task can be closed after release preparation. Resume only for a selected new issue, contributor update, or merge/publication request. A fresh task can use the verification ledger and active plan without relying on this conversation.

@@ -43,6 +43,8 @@ Both review findings were reproduced before fixing them. Deactivation now skips 
 
 Spec re-review passed and independently confirmed actual status 0 for both repaired cases. A final harness regression then caught inherited `ZCT_STATUS` masking a later operation's status. The helper now removes that internal marker from inherited environments before each run; **21/21 fish tests pass under both Bash versions**, including explicit failing-operation status checks. The production fixes at `19e83045fa50e556549a822a3364875e50eb3ba7` also passed all three [CI jobs](https://github.com/stanislc/zellij-claude-teams/actions/runs/34993880440).
 
+Final code-quality review caught inherited active-shim variables leaking into the fish fixture. A synthetic-state regression failed before setup was changed to remove every inherited `ZELLIJ_TMUX_SHIM_*` variable. Explicit inheritance tests still add their intended values afterward. **22/22 fish tests now pass under both Bash versions**, and review independently confirmed fixture isolation, the original reproducer, and cross-shell inheritance. Final spec and overall code-quality verdicts are PASS with no remaining actionable findings in the selected scope.
+
 ## Limits and deferred work
 
 No authenticated full Claude conversation was run; live cases use harmless controlled processes. Older Zellij capability profiles are simulated rather than installed end to end. PID reuse remains a limitation of the retained state format. The late-write fallback on older Zellij deliberately focuses the validated pane and still cannot prevent a user click racing the write. The broader state namespace, lock, environment-snapshot, and respawn serialization work remains outside this release scope. #6 is awaiting its author's update.
