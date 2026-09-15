@@ -1,0 +1,8 @@
+layout {
+    tab name="observer" {
+        pane command="/bin/sleep" { args "600"; }
+    }
+    tab name="leader-tab" {
+        pane command="/bin/sleep" { args "600"; }
+    }
+}

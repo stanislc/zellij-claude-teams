@@ -1,0 +1,45 @@
+{
+  "version": "0.1.1",
+  "commit": "d595bac82c7cf17272107c73cd09f2af528fffdc",
+  "date": "2026-09-15",
+  "local": {
+    "platform": "macOS arm64",
+    "bash": ["3.2.57", "5.3.15"],
+    "core_tests_per_interpreter": {"passed": 18, "failed": 0},
+    "release_tests_per_interpreter": {"passed": 5, "failed": 0},
+    "live": {
+      "zellij": "0.45.1",
+      "bash": "3.2.57",
+      "working_tree_changes": [],
+      "startup_and_placement": "pass",
+      "targeted_late_input": "pass",
+      "kill_leaves_sibling": "pass",
+      "cleanup_exit": 0
+    }
+  },
+  "ci": {
+    "url": "https://github.com/stanislc/zellij-claude-teams/actions/runs/34989943220",
+    "head_sha": "d595bac82c7cf17272107c73cd09f2af528fffdc",
+    "conclusion": "success",
+    "jobs": [
+      {"platform": "macos-15 arm64", "bash": "3.2.57", "zsh": "5.9", "python": "3.12.10", "core_passed": 18, "release_passed": 5},
+      {"platform": "macos-15 arm64", "bash": "5.3.15", "zsh": "5.9", "python": "3.12.10", "core_passed": 18, "release_passed": 5},
+      {"platform": "ubuntu-24.04 x86_64", "bash": "5.2.21", "zsh": "5.9", "python": "3.12.14", "core_passed": 18, "release_passed": 5}
+    ],
+    "shellcheck": "Error severity passed; advisory findings remain visible and nonblocking."
+  },
+  "release": {
+    "draft": true,
+    "url": "https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-a974aaa8ee17103e55cd",
+    "archive": "zellij-claude-teams-0.1.1.tar.gz",
+    "archive_sha256": "2a24d62596b043ce6c73ff0c6e37daa732b838d9698ab0d630f50348e422889a",
+    "checksum_file_sha256": "2a75d6edbbb4520c62809ee00c5db9c123237a469537325972bae33fdd20f714",
+    "archive_contents_compared_to_tag": true,
+    "uploaded_digests_verified": true
+  },
+  "limitations": [
+    "No authenticated Claude conversation was run.",
+    "Older Zellij capability profiles use a fake Zellij while executing the actual pane wrapper.",
+    "PID reuse and legacy focus races remain possible under the retained state design."
+  ]
+}

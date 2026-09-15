@@ -1,0 +1,20 @@
+{
+  "purpose": "Historical sources for the 2026-09-14 audit, not the maintained test suite",
+  "files": {
+    "probe.py.txt": {
+      "original_name": "probe.py",
+      "sha256": "b9efea3a7869b44450e5529e779f66a04e450df0ea50552484c23b3f4af7c148",
+      "bytes": 7153
+    },
+    "live.py.txt": {
+      "original_name": "live.py",
+      "sha256": "fa53caa99d9f523f982365fc9154a5b8aa52a277def94e2c40742ff5ca582275",
+      "bytes": 4450
+    },
+    "live-layout.kdl.txt": {
+      "original_name": "live-layout.kdl",
+      "sha256": "9a7d8ee2028b3fcaeae484a0d1c9183e7848a010bf6921fd0c54211cb03b70e8",
+      "bytes": 177
+    }
+  }
+}

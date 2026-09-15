@@ -1,0 +1,147 @@
+import json
+import os
+from pathlib import Path
+import shlex
+import signal
+import subprocess
+import sys
+import time
+
+ROOT = Path(__file__).parent
+MOCK = ROOT / 'mock'
+MOCK.mkdir(exist_ok=True)
+(MOCK / 'zellij').write_text('#!' + sys.executable + '\n' + r'''
+import json, os, subprocess, sys
+from pathlib import Path
+a=sys.argv[1:]
+root=Path(os.environ['PROBE_DIR'])
+with (root/'actions.jsonl').open('a') as f:
+    f.write(json.dumps({'args':a,'issuer':os.environ.get('ZELLIJ_PANE_ID')})+'\n')
+caps=os.environ.get('PROBE_CAPS','full')
+if '--help' in a:
+    if a[1]=='new-pane' and caps in ('full','no-focus'): print('--no-focus')
+    if a[1]=='rename-pane' and caps=='full': print('--pane-id')
+    sys.exit(0)
+if a[:2]==['action','new-pane']:
+    cmd=a[a.index('--')+1:]
+    pane=cmd[-1].lstrip('%')
+    env=os.environ.copy(); env['ZELLIJ_PANE_ID']=str(100+int(pane))
+    # Use the requested interpreter for both shim and real wrapper.
+    log=(root/f'wrapper-{pane}.log').open('w')
+    p=subprocess.Popen([os.environ['PROBE_BASH'],*cmd], env=env,
+        stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
+    with (root/'processes').open('a') as f: f.write(str(p.pid)+'\n')
+    print('terminal_'+env['ZELLIJ_PANE_ID'])
+elif a[:2]==['action','dump-screen']:
+    print('captured text')
+''')
+(MOCK / 'zellij').chmod(0o755)
+
+class Probe:
+    def __init__(self, label, repo='main', caps='full', bash='/bin/bash'):
+        self.root=ROOT/'runs'/label
+        self.root.mkdir(parents=True,exist_ok=True)
+        self.state=self.root/'state'; self.state.mkdir(exist_ok=True)
+        (self.state/'next_id').write_text('1\n')
+        (self.state/'sessions').touch()
+        self.repo=ROOT/repo
+        self.env={'PATH':str(MOCK)+':/opt/homebrew/bin:/usr/bin:/bin',
+            'TMPDIR':str(self.root), 'ZELLIJ_TMUX_SHIM_STATE':str(self.state),
+            'ZELLIJ_TMUX_SHIM_DIR':str(self.repo),'ZELLIJ_PANE_ID':'10',
+            'TMUX_PANE':'%0','PROBE_DIR':str(self.root),'PROBE_CAPS':caps,
+            'PROBE_BASH':bash,'ZELLIJ_TMUX_SHIM_DEBUG':'1'}
+        self.bash=bash
+    def call(self,*args,issuer=None,timeout=8):
+        env=self.env.copy()
+        if issuer is not None: env['ZELLIJ_PANE_ID']=issuer
+        return subprocess.run([self.bash,str(self.repo/'bin/tmux'),*args],
+            env=env,capture_output=True,text=True,timeout=timeout)
+    def actions(self):
+        f=self.root/'actions.jsonl'
+        return [json.loads(x) for x in f.read_text().splitlines()] if f.exists() else []
+    def waitfile(self,name):
+        for _ in range(50):
+            if (self.root/name).exists(): return (self.root/name).read_text()
+            time.sleep(.05)
+        return None
+    def close(self):
+        f=self.root/'processes'
+        if f.exists():
+            for pid in f.read_text().splitlines():
+                try: os.killpg(int(pid), signal.SIGTERM)
+                except ProcessLookupError: pass
+    def __enter__(self): return self
+    def __exit__(self,*_): self.close()
+
+def record(name, **kwargs):
+    print(json.dumps({'probe':name,**kwargs}),flush=True)
+
+for bash,label in [('/bin/bash','bash32'),('/opt/homebrew/bin/bash','bash53')]:
+    with Probe('protocol-'+label,bash=bash) as p:
+        first=p.call('-S','socket','split-window','-d','-t','%0','-h','-l','70%','-P','-F','#{pane_id}','--','cat')
+        deferred=(p.state/'1.fifo').exists() and not (p.state/'1.named').exists()
+        p.call('select-pane','-t','%1','-T','researcher')
+        command='printf %s '+shlex.quote('hello space & quote')+' > '+shlex.quote(str(p.root/'result'))+'; sleep 60'
+        launch=p.call('respawn-pane','-k','-t','%1','--',command)
+        result=p.waitfile('result')
+        second=p.call('split-window','-P','--','cat')
+        other=p.call('split-window','-P','--','cat',issuer='20')
+        panes=p.call('list-panes').stdout.strip().splitlines()
+        rejected=p.call('respawn-pane','-k','-t','%1','--','true')
+        p.call('send-keys','-t','%1','LATE_INPUT','Enter')
+        actions=p.actions()
+        p.call('kill-pane','-t','%1')
+        time.sleep(.15)
+        record('merged-protocol-'+label,first=[first.returncode,first.stdout],
+            placeholder_deferred=deferred,launch_rc=launch.returncode,result=result,
+            second=second.stdout,other_group=other.stdout,panes=panes,
+            already_running_rc=rejected.returncode,
+            creations=[a for a in actions if a['args'][:2]==['action','new-pane'] and '--help' not in a['args']],
+            renames=[a for a in actions if a['args'][:2]==['action','rename-pane'] and '--help' not in a['args']],
+            late_input=[a for a in actions if a['args'][:2] in (['action','write-chars'],['action','focus-pane-id'])],
+            killed_state_left=sorted(f.name for f in p.state.glob('1.*')))
+
+for caps in ['none','no-focus','full']:
+    with Probe('capabilities-'+caps,caps=caps) as p:
+        r=p.call('new-window','-P','-n','named-window','--','cat')
+        record('capability-'+caps,rc=r.returncode,stdout=r.stdout,
+            actions=[a for a in p.actions() if '--help' not in a['args']])
+
+for repo in ['pre8','pr8','main']:
+    with Probe('errors-'+repo,repo=repo) as p:
+        a=p.call('respawn-pane','--','true')
+        b=p.call('respawn-pane','-t','%1')
+        c=p.call('respawn-pane','-t','%../bad','--','true')
+        d=p.call('display-message','-p','#{pane_id}','-t','%7')
+        record('validation-'+repo,missing_target=a.returncode,missing_command=b.returncode,
+            invalid_target=c.returncode,display_target=d.stdout.strip())
+
+with Probe('legacy-direct') as p:
+    script='printf %s "$1" > "$2"; sleep 60'
+    r=p.call('split-window','-P','--','bash','-c',script,'bash','two words',str(p.root/'result'))
+    record('legacy-direct-argv',rc=r.returncode,value=p.waitfile('result'))
+with Probe('legacy-send') as p:
+    p.call('split-window','-P')
+    command='printf %s hello > '+shlex.quote(str(p.root/'result'))+'; sleep 60'
+    r=p.call('send-keys','-t','%1',command,'Enter')
+    record('legacy-send',rc=r.returncode,value=p.waitfile('result'))
+with Probe('respawn-argv') as p:
+    p.call('split-window','-P','--','cat')
+    r=p.call('respawn-pane','-k','-t','%1','--','printf','%s','two words')
+    record('respawn-multiple-argv',rc=r.returncode,
+        output=(p.root/'wrapper-1.log').read_text())
+
+with Probe('pr6-interrupt',repo='pr6') as p:
+    # A pidless tracked pane suffices: Ctrl-C must not fall through to write-chars.
+    (p.state/'1.zellij_id').write_text('101\n')
+    r=p.call('send-keys','-t','%1','C-c')
+    record('pr6-interrupt',rc=r.returncode,actions=p.actions())
+
+# Validate the hardening test harness against both snapshots, without editing it.
+for repo in ['pr2','main']:
+    target=ROOT/repo/'tests'; target.mkdir(exist_ok=True)
+    if repo=='main':
+        (target/'run.sh').write_bytes((ROOT/'pr2/tests/run.sh').read_bytes())
+    r=subprocess.run(['/bin/bash',str(target/'run.sh')],capture_output=True,text=True,timeout=20,
+        env={'PATH':'/opt/homebrew/bin:/usr/bin:/bin','TMPDIR':str(ROOT)})
+    record('hardening-harness-'+repo,rc=r.returncode,stdout=r.stdout,stderr=r.stderr)

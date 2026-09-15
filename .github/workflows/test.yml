@@ -1,0 +1,90 @@
+name: Compatibility
+
+on:
+  push:
+    branches: [main, 'stan/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: ${{ matrix.os }} / ${{ matrix.bash }} Bash
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            bash: system
+          - os: macos-15
+            bash: system
+          - os: macos-15
+            bash: current
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install test tools
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install -y zsh fish shellcheck
+          else
+            brew install bash fish shellcheck
+          fi
+      - name: Select and verify interpreter
+        shell: bash
+        env:
+          BASH_KIND: ${{ matrix.bash }}
+        run: |
+          selected=/bin/bash
+          if [[ "$RUNNER_OS" == macOS && "$BASH_KIND" == current ]]; then
+            selected="$(brew --prefix bash)/bin/bash"
+          fi
+          echo "SHIM_TEST_BASH=$selected" >> "$GITHUB_ENV"
+          "$selected" --version
+          if [[ "$RUNNER_OS" == macOS && "$BASH_KIND" == system ]]; then
+            "$selected" -c '[[ "$BASH_VERSION" == 3.2.* ]]'
+          fi
+          zsh --version
+          fish --version
+          python3 --version
+      - name: Parse every Bash script separately
+        shell: bash
+        run: |
+          for script in activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh; do
+            "$SHIM_TEST_BASH" -n "$script"
+          done
+      - name: Core regression tests
+        run: bash tests/run.sh --suite core
+      - name: Release metadata and installed copy
+        run: python3 tests/test_release.py
+      - name: Fish lifecycle, launcher, and installation
+        run: bash tests/run.sh --suite fish
+      - name: Parse fish scripts
+        run: |
+          for script in activate.fish deactivate.fish install.fish functions/claude-zellij.fish; do
+            fish --no-config --no-execute "$script"
+          done
+      - name: ShellCheck errors
+        run: shellcheck --severity=error activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh
+      - name: Existing ShellCheck advisory baseline
+        continue-on-error: true
+        run: shellcheck activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh
+      - name: Changed-line whitespace
+        shell: bash
+        env:
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "$DIFF_BASE^{commit}" 2>/dev/null; then
+            git diff --check "$DIFF_BASE" HEAD
+          else
+            git diff --check origin/main...HEAD
+          fi
