@@ -1,6 +1,8 @@
 # Selective compatibility and PR maintenance plan
 
-**Status:** Active plan as of 2026-09-15. PR administration below is complete; development has not started.
+**Status:** Development authorized on 2026-09-15. PR administration below is complete; the compatibility stage is verified, and fish integration follows.
+
+The owner's subsequent request authorizes implementation, version control, and release preparation. Preserve the exact pre-development main as `v0.1.0`, save compatibility maintenance as `v0.1.1`, and fish support as `v0.2.0`. Prepare draft releases and a review branch with CI; publishing releases and merging main remain separate actions. This supersedes the earlier local-only stopping instructions below.
 
 This plan supersedes the automatic M0–M6 progression in the [September 14 plan](2026-09-14-repository-cleanup.md). Keep contributions only when they solve a supported use case and pass relevant checks. The earlier v2 design is retained as an option, not a required migration or prerequisite for reviewing a contributor's focused fix.
 
@@ -24,7 +26,7 @@ The #2/#5 closure states and the exact posted #6 message were read back from Git
 3. Fix the reproduced late `send-keys` wrong-pane write. Prefer a validated explicit target; use the documented legacy focus fallback only when needed, propagate failures, and do not retry a failed targeted write against focus. Cover missing/stale targets and write/focus failures. Prove the marker reaches the intended teammate with focus in another tab.
 4. Fix the reproduced empty-session zsh deactivation failure with a narrow change and real `zsh -f` tests. Check restoration and a populated controlled session. Do not rewrite the state format as part of this fix.
 5. Run the maintained cases under Bash 3.2 and current Bash, actual zsh where relevant, an installed-copy startup smoke check, and an attached two-tab Zellij check. Add minimal CI for the selected cases on macOS/Linux. Record exact versions, commit, results, and unavailable checks in `docs/verification/repository-stabilization.md`. A mock or stand-in command is not an authenticated Claude conversation.
-6. Save scoped local commits and evidence before proceeding to fish. Report the remaining audit findings separately. #6 implementation, full parser expansion, the v2 transition, pushes, remote merges, and releases remain outside this development scope.
+6. Save scoped commits and evidence before proceeding to fish. Report the remaining audit findings separately. #6 implementation, full parser expansion, the v2 transition, and remote merges remain outside this development scope. Prepare the versioned draft releases described above.
 
 The remaining PATH, failed-activation, state/cleanup, and argument-contract findings stay in the [audit](../reviews/2026-09-14-pr-audit.md). Triage them by a concrete supported scenario, reproducer, impact, and smallest adequate fix. Closing the old drafts does not establish that those issues are fixed. A narrow patch must not be presented as complete state hardening.
 
@@ -47,7 +49,7 @@ Fish support is selected and follows the focused compatibility stage. It does no
 3. Preserve checks before exporting activation changes. Verify activation failure leaves the caller unchanged, re-sourcing does not add repeated shim PATH entries, and deactivation restores the saved environment. Address any necessary shared-shell correction narrowly and test it independently; do not claim the broader state audit is resolved.
 4. Keep the child-shell launcher optional and the parent shell unchanged. Verify argument boundaries, environment, exit status, inside/outside-Zellij behavior, missing-install fallback, and explicit teammate-mode choices without conflicting defaults. Do not shadow `claude` or edit the user's shell configuration automatically.
 5. Test both installers and function update/uninstall under isolated XDG/config roots, preserving unrelated files. Run real `fish --no-config` checks on macOS/Linux, record versions, and exercise installed startup through the actual wrapper with the stage 1 regressions. A stub Claude verifies launcher plumbing, not a complete Claude conversation.
-6. Save fish as a separate reviewable commit or commit series. Require the relevant checks before declaring it ready; report unavailable platforms/live checks rather than treating them as passing. Stop with local commits and a report. This scope selection does not authorize a GitHub message, push, PR merge, or closure.
+6. Save fish as a separate reviewable commit or commit series. Require the relevant checks before declaring it ready; report unavailable platforms/live checks rather than treating them as passing. Prepare the versioned draft and push the review branch for CI. This scope selection does not authorize a contributor message, PR merge, or closure.
 
 Use the six `fish.*` acceptance cases in the earlier catalogue as behavioral references, adapting their v2/helper-specific fixture assumptions to the retained current state format. Supporting fish does not require implementing the rest of that catalogue.
 
@@ -57,4 +59,4 @@ The [detailed v2 design](../specs/2026-09-14-repository-cleanup-design.md), its 
 
 ## Fresh-task prompt
 
-> Follow `docs/superpowers/START-HERE.md` and the active selective maintenance plan in two reviewable stages. First add the startup/placement regression harness and fix the reproduced late-input routing and empty-session zsh deactivation bugs. Then update and integrate fish support from #7 against that maintained core, preserving attribution and testing real fish lifecycle, launcher, and isolated installer behavior. Work on a `stan/` branch carrying the planning documents and preserve unrelated changes. Keep scoped commits for each stage, verify the actual wrapper, relevant Bash/zsh/fish variants, installed startup, and attached two-tab behavior, and record exact evidence and unavailable checks. Stop with local commits and a concise report. Do not begin the v2 redesign, implement #6 features, push, merge, close PRs, send messages, or tag a release.
+> Follow `docs/superpowers/START-HERE.md` and check the current completion/evidence records before starting work. The selected scope is focused compatibility fixes followed by fish integration from #7, with separate versioned commits and prepared draft releases. Preserve unrelated changes, contributor attribution, and the existing runtime state format. Verify relevant Bash/zsh/fish variants, installed startup, attached two-tab behavior, and CI. Do not begin the v2 redesign, implement #6 features, merge main, publish releases, close contributor PRs, or send contributor messages without a new request.

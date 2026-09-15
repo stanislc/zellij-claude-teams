@@ -9,8 +9,7 @@ fi
 
 # Kill any remaining wrapper processes and clean up their panes
 if [ -d "$ZELLIJ_TMUX_SHIM_STATE" ]; then
-    for pidfile in "$ZELLIJ_TMUX_SHIM_STATE"/*.pid; do
-        [ -f "$pidfile" ] || continue
+    command find "$ZELLIJ_TMUX_SHIM_STATE" -maxdepth 1 -name '*.pid' -type f 2>/dev/null | while IFS= read -r pidfile; do
         pid=$(cat "$pidfile" 2>/dev/null)
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
             kill "$pid" 2>/dev/null

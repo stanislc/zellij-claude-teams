@@ -110,6 +110,7 @@ bash install.sh --uninstall
 - **Session isolation** — state is scoped by `ZELLIJ_SESSION_NAME`, so multiple Zellij sessions don't collide
 - **Tab isolation** — agent teams in different tabs within the same session are tracked independently via `.group` files
 - **Focus-independent placement** — panes are created relative to the Claude session that spawned them (`zellij action new-pane --no-focus`), not wherever your focus happens to be, and are renamed by pane id. You can keep working in another tab while a team spawns; nothing lands in the wrong tab and your focus never moves. Needs zellij 0.44.1+ (`new-pane --no-focus`, `rename-pane --pane-id`); older versions fall back to focus-based placement.
+- **Targeted teammate input** — late `send-keys` calls use `write-chars --pane-id` when available, independently of the placement capabilities. Older versions focus the validated target before writing; failed focus or write operations return an error.
 
 ## How It Works
 
@@ -204,6 +205,23 @@ The shim avoids GNU-specific extensions:
 - `mkdir`-based locking with PID stale detection instead of `flock` or `find -mmin`
 - Fractional `sleep` with integer fallback
 - Runtime state in `$XDG_RUNTIME_DIR` (Linux) or `$TMPDIR` (macOS)
+
+## Versions and development
+
+The project release number is stored in `VERSION`, copied into the installation, and printed by `bash install.sh --version`. `tmux -V` reports a separate compatibility identity for Claude's tmux checks. See [the changelog](CHANGELOG.md), [release procedure](docs/RELEASING.md), and [verification ledger](docs/verification/repository-stabilization.md).
+
+Deactivate existing teams before updating the installed scripts. Running wrappers and their FIFOs are not upgraded in place.
+
+Tests require Python 3 and the actual shell being checked:
+
+```bash
+SHIM_TEST_BASH=/bin/bash tests/run.sh --suite core
+SHIM_TEST_BASH=/bin/bash python3 tests/test_release.py
+# Requires Zellij with targeted write/list/dump capabilities and an attached PTY:
+SHIM_TEST_BASH=/bin/bash tests/run.sh --suite live --output /tmp/shim-live-result.json
+```
+
+The core fixture executes the real pane wrapper behind a fake Zellij command. The live fixture creates and closes its own named session. CI checks system/current Bash on macOS and Bash on Linux; full Claude conversation testing is recorded separately from these stand-in commands.
 
 ## License
 

@@ -15,10 +15,11 @@ INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim"
 
 usage() {
     cat <<'EOF'
-Usage: bash install.sh [--uninstall]
+Usage: bash install.sh [--uninstall|--version]
 
 Options:
   --uninstall   Remove the shim and print deactivation instructions
+  --version     Print the project release version without installing
   --help        Show this help message
 
 The shim installs to ${XDG_DATA_HOME:-~/.local/share}/zellij-tmux-shim/
@@ -33,6 +34,7 @@ do_install() {
     # Copy scripts
     cp "${SCRIPT_DIR}/activate.sh"   "${INSTALL_DIR}/activate.sh"
     cp "${SCRIPT_DIR}/deactivate.sh" "${INSTALL_DIR}/deactivate.sh"
+    cp "${SCRIPT_DIR}/VERSION"       "${INSTALL_DIR}/VERSION"
     cp "${SCRIPT_DIR}/bin/tmux"      "${INSTALL_DIR}/bin/tmux"
     cp "${SCRIPT_DIR}/bin/zellij-pane-wrapper" "${INSTALL_DIR}/bin/zellij-pane-wrapper"
 
@@ -83,6 +85,9 @@ do_uninstall() {
 }
 
 case "${1:-}" in
+    --version)
+        printf 'zellij-claude-teams %s\n' "$(cat "${SCRIPT_DIR}/VERSION")"
+        ;;
     --help|-h)
         usage
         ;;

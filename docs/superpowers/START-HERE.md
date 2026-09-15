@@ -1,6 +1,6 @@
 # Repository maintenance: development handoff
 
-**Planning status:** Complete handoff. Development has not started. The active scope was narrowed on 2026-09-15.
+**Status:** Development and versioned release preparation authorized on 2026-09-15. Compatibility maintenance is verified; fish integration follows. See the [verification ledger](../verification/repository-stabilization.md) for results.
 
 Start with the [selective maintenance plan](plans/2026-09-15-selective-maintenance.md). It governs current work and includes a fresh-task prompt. The earlier broad M0–M6 plan and v2 design are reference options; do not execute them automatically.
 
@@ -33,12 +33,12 @@ The [v2 design](specs/2026-09-14-repository-cleanup-design.md) and [former execu
 | Local upstream integration | `8e4e33d69ee8a22580b049f8f65a874ed6ae65db` |
 | Unrelated local content observed | Untracked `.serena/`; leave it alone |
 
-Inspect `git log -1` and status for the current documentation head. Production files still match the reviewed main at handoff. Refresh origin and PR heads before development; do not reset user work to force the recorded snapshot. Start a `stan/` branch carrying these documents, use scoped commits, and append new results to `docs/verification/repository-stabilization.md` without rewriting the historical evidence.
+The table records the planning baseline. Development uses `stan/compatibility-and-fish`, carrying these documents. Inspect current git status and the verification ledger for newer production changes; do not reset user work to force the recorded snapshot. Use scoped commits and append results without rewriting historical evidence.
 
 The audit did not have fish or an authenticated Claude executable available. Harmless stand-in commands exercised the real wrapper/Zellij, but do not establish a full Claude conversation pass. Record unavailable checks explicitly in future work.
 
 ## Closeout boundary
 
-The planning package is committed independently from future development. The only remote actions during the September 15 update were the requested withdrawal of #2/#5 and update request on #6, verified after execution. No additional PR was merged, #7 remains open, and no development, push, release, or automatic monitor was started.
+The planning package was committed before development. The owner subsequently requested implementation and versioned release preparation. The exact baseline is preserved as `v0.1.0`; compatibility maintenance uses `v0.1.1`, and fish support uses `v0.2.0`. Prepare draft releases and a review branch with CI. No additional PR merge, contributor-PR closure, release publication, or automatic monitoring is implied.
 
-This conversation can be closed; a fresh task can start from the active plan and its prompt.
+After development closeout, a fresh task can use the verification ledger and active plan without relying on this conversation.
