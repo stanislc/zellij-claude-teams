@@ -7,8 +7,8 @@ Historical pre-fix results remain in [the September 14 audit](../superpowers/rev
 | Version | Scope | Reference |
 |---|---|---|
 | 0.1.0 | Exact pre-maintenance main, including #8/#9 and the known bugs | `93ed78831b0745d0cfa3b33ba085298f8855ef93`; annotated `v0.1.0` tag and verified GitHub draft |
-| 0.1.1 | Late-input targeting, zsh empty deactivation, regression harness/CI, project version metadata | Compatibility-stage commit/tag, recorded when cut |
-| 0.2.0 | Fish contribution updated against the maintained core | Planned next stage |
+| 0.1.1 | Late-input targeting, zsh empty deactivation, regression harness/CI, project version metadata | `d595bac82c7cf17272107c73cd09f2af528fffdc`; annotated `v0.1.1` tag |
+| 0.2.0 | Fish contribution updated against the maintained core | Fish integration commit; tag prepared after final review and CI |
 
 ## Compatibility stage, 2026-09-15
 
@@ -19,7 +19,23 @@ Historical pre-fix results remain in [the September 14 audit](../superpowers/rev
 - Syntax passes for the maintained Bash files under both interpreters. ShellCheck **0.11.0** has no error-severity findings; existing advisory warnings/information remain visible in CI. No claim of a fully warning-free or broadly hardened codebase is made.
 - Independent core spec and code-quality reviews were performed. The malformed PID and help-probe findings were corrected and re-tested.
 
-Commands: `SHIM_TEST_BASH=/bin/bash tests/run.sh --suite core`, repeat with `/opt/homebrew/bin/bash`; `python3 tests/test_release.py`; `tests/run.sh --suite live --output <controlled-result.json>`. CI runs selected core/release checks on Ubuntu and both system/current Bash on macOS. Remote run results and final release asset checks will be appended after verification.
+Commands: `SHIM_TEST_BASH=/bin/bash tests/run.sh --suite core`, repeat with `/opt/homebrew/bin/bash`; `python3 tests/test_release.py`; `tests/run.sh --suite live --output <controlled-result.json>`.
+
+All three [hosted CI jobs](https://github.com/stanislc/zellij-claude-teams/actions/runs/34989943220) passed at `d595bac82c7cf17272107c73cd09f2af528fffdc`: Ubuntu 24.04 system Bash and macOS 15 system/current Bash. A fresh attached live run against that exact clean commit passed all three cases with cleanup exit 0. Source-archive contents were compared against the tag; archive SHA-256: `2a24d62596b043ce6c73ff0c6e37daa732b838d9698ab0d630f50348e422889a`.
+
+The [v0.1.1 GitHub draft](https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-a974aaa8ee17103e55cd) was read back with `isDraft=true`, the exact commit target, and matching uploaded archive/checksum digests. The earlier [v0.1.0 draft](https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-818fd767e92d1f60f102) preserves pre-maintenance main. Its archive SHA-256 is `8bc79c9062d762cd270536482c93248bdcb6dab8fca6c6c74009c7ee717f6cef`.
+
+## Fish integration, 2026-09-15
+
+The source contribution is Maxim Rubchinsky's #7 at `5120d7896e85cae752589d16b08b1cbee0d0fd02`. It adds shell adapters and installation around the existing Bash pane runtime. The port retains that boundary and includes necessary lifecycle and launcher corrections; it does not adopt the deferred v2 state design.
+
+Real-fish preflight of the source contribution reproduced repeated PATH entries, lost prior TMUX values, empty-PATH restoration failure, and successful activation despite state initialization failure. The new test-first suite against v0.1.1 (which has no fish files) initially produced 22 assertion failures and one error across 13 methods. Fish's native empty-PATH representation was then reflected in the fixture: capture the baseline inside fish and compare restoration to it, while Bash retains exact empty-component checks.
+
+The core deactivation fixture now uses the retained canonical runtime/user/session state directory so it exercises valid cleanup under the new path guard. Existing behavior assertions remain. A real `zsh -f` lifecycle case also checks repeated activation and restoration of the shared shell adapter.
+
+Further targeted RED/GREEN cases cover inherited activation with a rebuilt PATH in the optional launcher, a living allocator-lock owner before any pane PID exists, and preservation of the fish caller's umask. The launcher now activates in its child for both fresh and inherited-active calls. Activation preserves snapshots for a live allocation and leaves lock recovery to the existing allocator.
+
+Local results: **16/16 fish, 18/18 core, and 5/5 release/installed-copy tests pass** under both Bash 3.2.57 and 5.3.15 with fish 4.9.3. The fish suite invokes real fish with isolated HOME/XDG/config/runtime roots, an argv/status-recording Claude stand-in, and installed deferred startup through the actual shared wrapper. Bash, zsh, and fish parsing checks, ShellCheck at error severity, and changed-line whitespace checks pass. Hosted fish results and release verification are recorded at closeout.
 
 ## Limits and deferred work
 

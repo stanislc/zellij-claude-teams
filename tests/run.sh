@@ -46,8 +46,14 @@ case "$suite" in
         [ -n "$case_id" ] && args+=(--case "$case_id")
         exec python3 "$TEST_DIR/test_compat.py" "${args[@]}"
         ;;
+    fish)
+        [ ${#extra_args[@]} -eq 0 ] || { echo "tests/run.sh: unexpected fish arguments" >&2; exit 2; }
+        args=(--suite fish)
+        [ -n "$case_id" ] && args+=(--case "$case_id")
+        exec python3 "$TEST_DIR/test_fish.py" "${args[@]}"
+        ;;
     live)
-        [ -z "$case_id" ] || { echo "tests/run.sh: --case is only valid for the core suite" >&2; exit 2; }
+        [ -z "$case_id" ] || { echo "tests/run.sh: --case is only valid for the core or fish suite" >&2; exit 2; }
         [ -f "$TEST_DIR/live.py" ] || { echo "tests/run.sh: live suite is not installed" >&2; exit 2; }
         if [ ${#extra_args[@]} -gt 0 ]; then
             exec python3 "$TEST_DIR/live.py" "${extra_args[@]}"

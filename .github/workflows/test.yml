@@ -35,9 +35,9 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install -y zsh shellcheck
+            sudo apt-get install -y zsh fish shellcheck
           else
-            brew install bash shellcheck
+            brew install bash fish shellcheck
           fi
       - name: Select and verify interpreter
         shell: bash
@@ -54,6 +54,7 @@ jobs:
             "$selected" -c '[[ "$BASH_VERSION" == 3.2.* ]]'
           fi
           zsh --version
+          fish --version
           python3 --version
       - name: Parse every Bash script separately
         shell: bash
@@ -65,6 +66,13 @@ jobs:
         run: bash tests/run.sh --suite core
       - name: Release metadata and installed copy
         run: python3 tests/test_release.py
+      - name: Fish lifecycle, launcher, and installation
+        run: bash tests/run.sh --suite fish
+      - name: Parse fish scripts
+        run: |
+          for script in activate.fish deactivate.fish install.fish functions/claude-zellij.fish; do
+            fish --no-config --no-execute "$script"
+          done
       - name: ShellCheck errors
         run: shellcheck --severity=error activate.sh deactivate.sh install.sh bin/tmux bin/zellij-pane-wrapper tests/run.sh
       - name: Existing ShellCheck advisory baseline

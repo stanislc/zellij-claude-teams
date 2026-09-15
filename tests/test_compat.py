@@ -29,8 +29,10 @@ class ShimSandbox:
         self.temp = tempfile.TemporaryDirectory(prefix="zellij-shim-core-")
         self.root = Path(self.temp.name)
         self.root.chmod(0o700)
-        self.state = self.root / "state"
-        self.state.mkdir(mode=0o700)
+        self.runtime = self.root / "runtime"
+        self.runtime.mkdir(mode=0o700)
+        self.state = self.runtime / f"zellij-tmux-shim-{os.getuid()}" / "core-session"
+        self.state.mkdir(mode=0o700, parents=True)
         (self.state / "next_id").write_text("1\n", encoding="ascii")
         (self.state / "sessions").touch()
         self.fake_bin = self.root / "bin"
@@ -43,6 +45,8 @@ class ShimSandbox:
             ),
             "SHIM_TEST_BASH": self.bash,
             "SHIM_TEST_ROOT": str(self.root),
+            "XDG_RUNTIME_DIR": str(self.runtime),
+            "ZELLIJ_SESSION_NAME": "core-session",
             "ZELLIJ_TMUX_SHIM_STATE": str(self.state),
             "ZELLIJ_TMUX_SHIM_DIR": str(REPO),
             "ZELLIJ_PANE_ID": "10",

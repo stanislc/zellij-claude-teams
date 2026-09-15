@@ -1,6 +1,6 @@
 # Release versions and preparation
 
-Use semantic project versions: patch releases for compatible fixes, minor releases for features such as fish support, and major releases for a deliberate breaking public contract. The pre-maintenance snapshot is `v0.1.0`; compatibility maintenance is `v0.1.1`; fish support is planned as `v0.2.0`.
+Use semantic project versions: patch releases for compatible fixes, minor releases for features such as fish support, and major releases for a deliberate breaking public contract. The pre-maintenance snapshot is `v0.1.0`; compatibility maintenance is `v0.1.1`; fish support uses `v0.2.0`.
 
 `VERSION` is the project identity and is installed alongside the runtime. Inspect it with `bash install.sh --version` in a checkout or read the installed `VERSION` file. `tmux -V` intentionally retains the tmux protocol identity expected by callers; do not replace that output with the project release number.
 

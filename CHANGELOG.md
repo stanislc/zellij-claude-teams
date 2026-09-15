@@ -2,6 +2,16 @@
 
 Project versions are independent of the tmux version reported by the compatibility shim.
 
+## 0.2.0 — fish support
+
+- Add native fish activation/deactivation, the optional `claude-zellij` child-shell launcher, and an installer that maintains the fish autoloaded function.
+- Preserve explicit teammate-mode arguments and Claude's exit status; stop the launch when activation fails.
+- Validate activation before changing the caller's environment, deduplicate the shim PATH entry, and restore saved PATH and TMUX values across Bash, zsh, and fish.
+- Preserve live session records during activation and guard lifecycle cleanup paths and PIDs within the retained state format.
+- Add real fish lifecycle, launcher, and isolated installer checks to macOS/Linux CI.
+
+Adapted from Maxim Rubchinsky's [#7](https://github.com/stanislc/zellij-claude-teams/pull/7), source commit `5120d7896e85cae752589d16b08b1cbee0d0fd02`, with focused compatibility corrections. The shared Bash pane runtime retains the #8/#9 behavior and v0.1.1 fixes.
+
 ## 0.1.1 — compatibility maintenance
 
 - Route late teammate input to its recorded pane on capable Zellij versions, with a checked legacy focus fallback and visible failures.
