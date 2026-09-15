@@ -8,7 +8,7 @@ Historical pre-fix results remain in [the September 14 audit](../superpowers/rev
 |---|---|---|
 | 0.1.0 | Exact pre-maintenance main, including #8/#9 and the known bugs | `93ed78831b0745d0cfa3b33ba085298f8855ef93`; annotated `v0.1.0` tag and verified GitHub draft |
 | 0.1.1 | Late-input targeting, zsh empty deactivation, regression harness/CI, project version metadata | `d595bac82c7cf17272107c73cd09f2af528fffdc`; annotated `v0.1.1` tag |
-| 0.2.0 | Fish contribution updated against the maintained core | Fish integration commit; tag prepared after final review and CI |
+| 0.2.0 | Fish contribution updated against the maintained core | `de3bf88d153fca80bcc1cdec6862406338dc809f`; annotated `v0.2.0` tag |
 
 ## Compatibility stage, 2026-09-15
 
@@ -44,6 +44,14 @@ Both review findings were reproduced before fixing them. Deactivation now skips 
 Spec re-review passed and independently confirmed actual status 0 for both repaired cases. A final harness regression then caught inherited `ZCT_STATUS` masking a later operation's status. The helper now removes that internal marker from inherited environments before each run; **21/21 fish tests pass under both Bash versions**, including explicit failing-operation status checks. The production fixes at `19e83045fa50e556549a822a3364875e50eb3ba7` also passed all three [CI jobs](https://github.com/stanislc/zellij-claude-teams/actions/runs/34993880440).
 
 Final code-quality review caught inherited active-shim variables leaking into the fish fixture. A synthetic-state regression failed before setup was changed to remove every inherited `ZELLIJ_TMUX_SHIM_*` variable. Explicit inheritance tests still add their intended values afterward. **22/22 fish tests now pass under both Bash versions**, and review independently confirmed fixture isolation, the original reproducer, and cross-shell inheritance. Final spec and overall code-quality verdicts are PASS with no remaining actionable findings in the selected scope.
+
+## Release closeout
+
+The final release commit is `de3bf88d153fca80bcc1cdec6862406338dc809f`, tagged `v0.2.0`. All three [final CI jobs](https://github.com/stanislc/zellij-claude-teams/actions/runs/34994673926) passed **18 core + 22 fish + 5 release tests each**. The attached Zellij run against that exact clean commit passed all three cases and verified session cleanup. The [compact evidence record](v0.2.0.json) records exact shell versions, counts, commit, and artifact checks; [v0.1.1 evidence](v0.1.1.json) preserves the intermediate stage.
+
+The [v0.2.0 draft release](https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-f83ae1ccd14def6474e7) was read back with the exact target and matching uploaded asset digests. All 38 tracked archive files and executable bits were compared against the tag. Source-archive SHA-256: `30c3526d99969038e4e95c5a5335c4ac6937c5fae24bf17a4ee1a67d3d0747e1`. The source archive, checksum file, and verification JSON are attached. All three version tags were preserved and resolved back from GitHub; releases remain drafts.
+
+Development is complete on `stan/compatibility-and-fish`, with [draft PR #10](https://github.com/stanislc/zellij-claude-teams/pull/10) prepared against main. Main is unchanged by this task. Merge/publication is an explicit next action; no contributor PR was closed or merged as a side effect of the port. Resume development for a selected new issue or #6 author update, rather than automatically starting the deferred redesign.
 
 ## Limits and deferred work
 

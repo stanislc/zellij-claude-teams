@@ -17,7 +17,7 @@ This plan supersedes the automatic M0–M6 progression in the [September 14 plan
 
 Main was rechecked at `93ed78831b0745d0cfa3b33ba085298f8855ef93`. It has no `activate.fish`, `deactivate.fish`, `install.fish`, or `functions/claude-zellij.fish`. #8/#9 change the Bash core; they do not subsume #7's fish adapters and installation. The owner has now selected fish support. Keep #7 as the source contribution, subject to updating and validation rather than merging the stale head automatically.
 
-The #2/#5 closure states and the exact posted #6 message were read back from GitHub. No branch was deleted, no code was pushed, and no further PR was merged. #7 received no closure or message. The old audit and its test evidence remain unchanged observations of the earlier snapshot.
+At the PR-administration checkpoint, the #2/#5 closure states and exact posted #6 message were read back from GitHub. No branch had been deleted, no code had been pushed, and no further PR had been merged. #7 received no closure or message. Subsequent authorized development, review-branch pushes, and draft release preparation are recorded in the verification ledger. The old audit and its test evidence remain unchanged observations of the earlier snapshot.
 
 ## Development stage 1: focused compatibility fixes
 

@@ -1,0 +1,81 @@
+{
+  "version": "0.2.0",
+  "commit": "de3bf88d153fca80bcc1cdec6862406338dc809f",
+  "date": "2026-09-15",
+  "reviews": {
+    "spec": "PASS",
+    "final_code_quality": "PASS"
+  },
+  "local": {
+    "bash": [
+      "3.2.57",
+      "5.3.15"
+    ],
+    "fish": "4.9.3",
+    "core_tests_per_interpreter": 18,
+    "fish_tests_per_interpreter": 22,
+    "release_tests_per_interpreter": 5
+  },
+  "live": {
+    "zellij": "zellij 0.45.1",
+    "bash": "3.2.57(1)-release",
+    "commit": "de3bf88d153fca80bcc1cdec6862406338dc809f",
+    "working_tree_changes": [],
+    "startup_and_placement": "pass",
+    "targeted_late_input": "pass",
+    "kill_leaves_sibling": "pass",
+    "cleanup_exit": 0,
+    "status": "pass"
+  },
+  "ci": {
+    "url": "https://github.com/stanislc/zellij-claude-teams/actions/runs/34994673926",
+    "head_sha": "de3bf88d153fca80bcc1cdec6862406338dc809f",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "platform": "ubuntu-24.04 x86_64",
+        "bash": "5.2.21",
+        "fish": "3.7.0",
+        "core_passed": 18,
+        "fish_passed": 22,
+        "release_passed": 5
+      },
+      {
+        "platform": "macos-15 arm64",
+        "bash": "3.2.57",
+        "fish": "4.9.2",
+        "core_passed": 18,
+        "fish_passed": 22,
+        "release_passed": 5
+      },
+      {
+        "platform": "macos-15 arm64",
+        "bash": "5.3.15",
+        "fish": "4.9.2",
+        "core_passed": 18,
+        "fish_passed": 22,
+        "release_passed": 5
+      }
+    ]
+  },
+  "archive": {
+    "name": "zellij-claude-teams-0.2.0.tar.gz",
+    "sha256": "30c3526d99969038e4e95c5a5335c4ac6937c5fae24bf17a4ee1a67d3d0747e1",
+    "tracked_files_verified": 38,
+    "contents_and_executable_bits_compared_to_tag": true,
+    "checksum_file_sha256": "242fe6eb986100d6e0d56d283719604e08f4a72973f20c21ff26cb022a66f3be"
+  },
+  "limitations": [
+    "No authenticated Claude conversation was run.",
+    "Older Zellij capability profiles are simulated with the actual pane wrapper.",
+    "PID reuse and legacy focus races remain possible under the retained state format."
+  ],
+  "release": {
+    "draft": true,
+    "url": "https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-f83ae1ccd14def6474e7",
+    "target_commit_verified": true,
+    "remote_tag_verified": true,
+    "uploaded_asset_digests_verified": true,
+    "verification_asset_sha256": "2c02a790459674dc0d7a02b565207c913700a83cc3344723dd8c6a87d20f293e"
+  }
+}

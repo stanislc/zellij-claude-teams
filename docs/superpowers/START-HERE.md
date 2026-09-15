@@ -2,6 +2,8 @@
 
 **Status:** Selected development completed and independently reviewed on 2026-09-15. Compatibility maintenance and fish integration are implemented on `stan/compatibility-and-fish`. See the [verification ledger](../verification/repository-stabilization.md) for versioned results, release references, and limitations.
 
+Review handoff: [draft PR #10](https://github.com/stanislc/zellij-claude-teams/pull/10). The [v0.2.0 draft release](https://github.com/stanislc/zellij-claude-teams/releases/tag/untagged-f83ae1ccd14def6474e7) includes the verified source archive, checksum, and test record. Main and release publication remain pending an explicit action.
+
 Start with the [selective maintenance plan](plans/2026-09-15-selective-maintenance.md). It governs current work and includes a fresh-task prompt. The earlier broad M0–M6 plan and v2 design are reference options; do not execute them automatically.
 
 ## Current decisions
