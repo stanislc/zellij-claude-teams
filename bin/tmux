@@ -438,12 +438,12 @@ split-window)
 send-keys)
     sk_target=""
     sk_keys=()
-    sk_send_sigint=false
+    sk_C_c=false
     while [ $# -gt 0 ]; do
         case "$1" in
             -t) sk_target="${2:-}"; shift 2 || shift ;;
             C-c)
-                sk_send_sigint=true
+                sk_C_c=true
                 shift
                 ;;
             Enter|C-m)
@@ -466,19 +466,33 @@ send-keys)
     PANE_KEY="${sk_target#%}"
     validate_pane_key "$PANE_KEY" || { log_debug "send-keys: invalid pane key"; exit 1; }
 
-    # Handle C-c: send SIGINT to the process in the target pane
-    if [ "$sk_send_sigint" = true ]; then
+    # Handle C-c: send SIGINT to the target pane's process group so that child
+    # processes spawned by the agent (sub-shells, build tools) are interrupted too,
+    # not just the wrapper's direct child. Mirrors kill-pane's group-first approach.
+    # The recorded .pid is the wrapper PID; negating it targets its process group.
+    # If that fails (e.g. the command is not a group leader) we fall back to the
+    # single PID. Always use the correctly-parsed flag, never a literal `$***`.
+    # SECURITY: C-c must NEVER fall through to the FIFO / write-chars path below —
+    # that would write raw text (or an empty line) into the agent's pane, exactly
+    # what we must avoid. If we cannot deliver SIGINT, we exit non-zero so the
+    # caller knows the interrupt was not sent.
+    if [ "$sk_C_c" = true ]; then
         PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
+        sent=false
         if [ -f "$PID_FILE" ]; then
             pid=$(cat "$PID_FILE")
             if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                kill -INT "$pid" 2>/dev/null || true
-                log_debug "send-keys: sent SIGINT to PID ${pid}"
+                if kill -INT -- -"$pid" 2>/dev/null || kill -INT "$pid" 2>/dev/null; then
+                    sent=true
+                    log_debug "send-keys: sent SIGINT to PID ${pid} (process group attempted)"
+                fi
             fi
         fi
-        # If there are no other keys to send, we're done
-        if [ ${#sk_keys[@]} -eq 0 ]; then
+        if [ "$sent" = true ]; then
             exit 0
+        else
+            log_debug "send-keys: C-c requested but no live PID to interrupt; refusing to fall through"
+            exit 1
         fi
     fi
 
@@ -790,6 +804,65 @@ new-window)
     exit 0
     ;;
 
+# --- capture-pane ---
+# Subset of tmux capture-pane we support, mapping onto `zellij action dump-screen`:
+#   -t <pane>   target pane (required)
+#   -p          write the captured content to stdout (required for agent use)
+#   -S / -E     scrollback range -> request full history (--full)
+#   -e          ignore (escape sequences) but accepted for compatibility
+# Unsupported (return non-zero): -b (alternate buffer), printing to a buffer
+# (no -p), or any unknown flag. Invalid target / missing zellij id / dump failure
+# also return non-zero so callers can detect failure instead of getting empty output.
+capture-pane)
+    cp_target=""
+    cp_print=false
+    cp_full=false
+    cp_reject=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -t) cp_target="${2:-}"; shift 2 || shift ;;
+            -p) cp_print=true; shift ;;
+            -S|-E) cp_full=true; shift 2 || shift ;;
+            -e) shift ;;
+            -b) cp_reject=true; shift 2 || shift ;;
+            *) cp_reject=true; shift ;;
+        esac
+    done
+
+    if [ "$cp_reject" = true ]; then
+        log_debug "capture-pane: unsupported option requested"
+        exit 1
+    fi
+    if [ "$cp_print" != true ]; then
+        # tmux would write to a buffer; we have no buffer concept. Be explicit.
+        log_debug "capture-pane: -p is required (no buffer support)"
+        exit 1
+    fi
+    if [ -z "$cp_target" ]; then
+        cp_target="${TMUX_PANE:-%0}"
+    fi
+    PANE_KEY="${cp_target#%}"
+    validate_pane_key "$PANE_KEY" || { log_debug "capture-pane: invalid pane key"; exit 1; }
+
+    ZID_FILE="${STATE_DIR}/${PANE_KEY}.zellij_id"
+    if [ ! -f "$ZID_FILE" ]; then
+        log_debug "capture-pane: no zellij id for ${cp_target}"
+        exit 1
+    fi
+    zid=$(cat "$ZID_FILE" 2>/dev/null)
+    if [ -z "$zid" ] || [ "$zid" = "unknown" ]; then
+        log_debug "capture-pane: zellij id unknown for ${cp_target}"
+        exit 1
+    fi
+
+    if [ "$cp_full" = true ]; then
+        zellij action dump-screen --full --pane-id "$zid" 2>/dev/null || exit 1
+    else
+        zellij action dump-screen --pane-id "$zid" 2>/dev/null || exit 1
+    fi
+    exit 0
+    ;;
+
 # --- list-windows ---
 list-windows)
     while [ $# -gt 0 ]; do
@@ -804,7 +877,7 @@ list-windows)
     ;;
 
 # --- No-op commands ---
-select-layout|resize-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|capture-pane|save-buffer|delete-buffer|wait-for|refresh-client)
+select-layout|resize-pane|set-option|break-pane|join-pane|set|setw|set-window-option|bind-key|unbind-key|source-file|rename-session|rename-window|move-window|swap-pane|swap-window|pipe-pane|save-buffer|delete-buffer|wait-for|refresh-client)
     log_debug "no-op: $CMD $*"
     exit 0
     ;;
