@@ -7,6 +7,7 @@
 
 set -uo pipefail
 
+
 STATE_DIR="${ZELLIJ_TMUX_SHIM_STATE:?ZELLIJ_TMUX_SHIM_STATE not set}"
 SHIM_DIR="${ZELLIJ_TMUX_SHIM_DIR:?ZELLIJ_TMUX_SHIM_DIR not set}"
 
@@ -260,24 +261,28 @@ serialize_command() {
 }
 
 # ---------------------------------------------------------------------------
-# Strip -L/-S <socket> flags (Claude Code may pass them; we ignore them)
+# Strip leading -L/-S <socket> flags (Claude Code / tmux may pass them at the
+# TOP LEVEL, before the subcommand). We only strip them BEFORE the subcommand,
+# so subcommand-local options like `capture-pane -S/-E` are preserved intact.
 # ---------------------------------------------------------------------------
 ARGS=()
+seen_subcommand=false
 while [ $# -gt 0 ]; do
-    case "$1" in
-        -L|-S)
-            shift 2 || shift  # skip flag and its argument
-            ;;
-        -L*|-S*)
-            shift  # skip -L<value> or -S<value> (no space)
-            ;;
-        *)
-            ARGS+=("$1")
-            shift
-            ;;
-    esac
+    if [ "$seen_subcommand" = false ] && { [ "$1" = "-L" ] || [ "$1" = "-S" ]; }; then
+        shift 2 || shift
+        continue
+    fi
+    if [ "$seen_subcommand" = false ] && [[ "$1" == -L* || "$1" == -S* ]]; then
+        shift
+        continue
+    fi
+    if [ "$seen_subcommand" = false ] && [[ "$1" != -* ]]; then
+        seen_subcommand=true
+    fi
+    ARGS+=("$1")
+    shift
 done
-set -- "${ARGS[@]+"${ARGS[@]}"}"
+set -- "${ARGS[@]}"
 
 # Handle empty invocation
 if [ $# -eq 0 ]; then
@@ -480,18 +485,36 @@ send-keys)
         PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
         sent=false
         if [ -f "$PID_FILE" ]; then
-            pid=$(cat "$PID_FILE")
-            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-                if kill -INT -- -"$pid" 2>/dev/null || kill -INT "$pid" 2>/dev/null; then
-                    sent=true
-                    log_debug "send-keys: sent SIGINT to PID ${pid} (process group attempted)"
+            pid=$(cat "$PID_FILE" 2>/dev/null)
+            # --- PID safety: reject zero / negative / non-numeric / absurd values ---
+            # A pid of 0 would make `kill -INT -- -0` signal OUR OWN process group.
+            if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 0 ] && [ "$pid" -lt 4194304 ]; then
+                if kill -0 "$pid" 2>/dev/null; then
+                    # The recorded .pid is the wrapper PID, which is NOT necessarily the
+                    # foreground process group ID of the pane's command. Read the real
+                    # PGID from /proc (stat field 5) so we interrupt the actual group
+                    # that owns the agent's foreground child (and its sub-processes).
+                    pgid=$(awk '{print $5}' "/proc/${pid}/stat" 2>/dev/null)
+                    if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 0 ]; then
+                        if kill -INT -- -"$pgid" 2>/dev/null; then
+                            sent=true
+                            log_debug "send-keys: sent SIGINT to PGID ${pgid} (from pid ${pid})"
+                        fi
+                    fi
+                    # Fallback: the pid itself (covers the case where pid == pgid)
+                    if [ "$sent" = false ] && kill -INT "$pid" 2>/dev/null; then
+                        sent=true
+                        log_debug "send-keys: sent SIGINT to PID ${pid} (single-PID fallback)"
+                    fi
                 fi
+            else
+                log_debug "send-keys: C-c ignored — invalid pid '${pid}' in ${PID_FILE}"
             fi
         fi
         if [ "$sent" = true ]; then
             exit 0
         else
-            log_debug "send-keys: C-c requested but no live PID to interrupt; refusing to fall through"
+            log_debug "send-keys: C-c requested but no live/interrutible PID found; refusing to fall through"
             exit 1
         fi
     fi
@@ -822,7 +845,20 @@ capture-pane)
         case "$1" in
             -t) cp_target="${2:-}"; shift 2 || shift ;;
             -p) cp_print=true; shift ;;
-            -S|-E) cp_full=true; shift 2 || shift ;;
+            -S|-E)
+                # Scrollback range. We map any requested scrollback onto
+                # `dump-screen --full` (zellij has no line-range API), but we
+                # MUST validate the supplied integer argument, otherwise a bare
+                # `-S` or `-S abc` would silently grab everything and hide a bug.
+                cp_arg="${2:-}"
+                if [[ "$cp_arg" =~ ^-?[0-9]+$ ]]; then
+                    cp_full=true
+                    shift 2 || shift
+                else
+                    cp_reject=true
+                    shift 2 || shift
+                fi
+                ;;
             -e) shift ;;
             -b) cp_reject=true; shift 2 || shift ;;
             *) cp_reject=true; shift ;;

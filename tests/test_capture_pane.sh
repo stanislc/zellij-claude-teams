@@ -69,6 +69,24 @@ out=$(run_shim capture-pane -t "%3" -p -S -10 -E -1); rc=$?
 assert "capture-pane -S/-E exits 0" "[ $rc -eq 0 ]"
 assert "capture-pane -S/-E uses --full" "grep -q 'zellij action dump-screen --full --pane-id zid-abc123' '$ZELLIJ_LOG'"
 
+# --- Test B2: positive -S/-E range also accepted (maps to --full) --------------
+rm -f "$ZELLIJ_LOG"
+out=$(run_shim capture-pane -t "%3" -p -S 2 -E 4); rc=$?
+assert "capture-pane -S 2 -E 4 exits 0" "[ $rc -eq 0 ]"
+assert "capture-pane -S 2 -E 4 uses --full" "grep -q 'zellij action dump-screen --full --pane-id zid-abc123' '$ZELLIJ_LOG'"
+
+# --- Test B3: bare -S (missing integer arg) rejected --------------------------
+rm -f "$ZELLIJ_LOG"
+run_shim capture-pane -t "%3" -p -S >/dev/null 2>&1; rc=$?
+assert "capture-pane bare -S (no int arg) exits non-zero" "[ $rc -ne 0 ]"
+assert "capture-pane bare -S does NOT call zellij" "[ ! -s '$ZELLIJ_LOG' ]"
+
+# --- Test B4: non-integer -S arg rejected -------------------------------------
+rm -f "$ZELLIJ_LOG"
+run_shim capture-pane -t "%3" -p -S abc >/dev/null 2>&1; rc=$?
+assert "capture-pane -S abc (non-integer) exits non-zero" "[ $rc -ne 0 ]"
+assert "capture-pane -S abc does NOT call zellij" "[ ! -s '$ZELLIJ_LOG' ]"
+
 # --- Test C: -b (alternate buffer) rejected with non-zero --------------------
 rm -f "$ZELLIJ_LOG"
 run_shim capture-pane -t "%3" -p -b >/dev/null 2>&1; rc=$?
