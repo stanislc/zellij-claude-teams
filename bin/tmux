@@ -43,6 +43,47 @@ validate_pane_key() {
     esac
 }
 
+# Send a signal to a pane's process tree, covering the foreground child even when
+# it spawned its own process group (e.g. via setsid). The recorded .pid is the
+# wrapper PID; the agent command runs under it via eval and usually shares the
+# wrapper's group, but a foreground child that called setsid is NOT in that group.
+# We signal: (1) the wrapper's own process group (from /proc field 5), (2) any
+# direct child that is its own group leader (the setsid case), and (3) the pid
+# itself as a final fallback. Returns 0 if anything was signalled, 1 otherwise.
+# All PID validity checks (reject 0 / negative / malformed / non-live) live here so
+# send-keys and kill-pane share one safe path.
+pane_signal_tree() {
+    local pid="$1" sig="$2"
+    [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 0 ] && [ "$pid" -lt 4194304 ] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+
+    local pgid targeted=""
+    pgid=$(awk '{print $5}' "/proc/${pid}/stat" 2>/dev/null)
+    if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 0 ]; then
+        if kill -"$sig" -- -"$pgid" 2>/dev/null; then
+            targeted="${targeted} pgid=${pgid}"
+        fi
+    fi
+    # Direct children that became their own group leaders (setsid foreground).
+    local child cpgid
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+        cpgid=$(awk '{print $5}' "/proc/${child}/stat" 2>/dev/null)
+        if [[ "$cpgid" =~ ^[0-9]+$ ]] && [ "$cpgid" -gt 0 ] && [ "$cpgid" != "$pgid" ]; then
+            if kill -"$sig" -- -"$cpgid" 2>/dev/null; then
+                targeted="${targeted} childpgid=${cpgid}"
+            fi
+        fi
+    done
+    if kill -"$sig" "$pid" 2>/dev/null; then
+        targeted="${targeted} pid=${pid}"
+    fi
+    if [ -n "$targeted" ]; then
+        log_debug "pane_signal_tree: sent SIG${sig} to:${targeted} (from wrapper pid ${pid})"
+        return 0
+    fi
+    return 1
+}
+
 # Atomic increment of next_id using mkdir-based locking (portable; macOS lacks flock)
 alloc_pane_id() {
     local lockdir="${STATE_DIR}/next_id.lock"
@@ -471,50 +512,25 @@ send-keys)
     PANE_KEY="${sk_target#%}"
     validate_pane_key "$PANE_KEY" || { log_debug "send-keys: invalid pane key"; exit 1; }
 
-    # Handle C-c: send SIGINT to the target pane's process group so that child
-    # processes spawned by the agent (sub-shells, build tools) are interrupted too,
-    # not just the wrapper's direct child. Mirrors kill-pane's group-first approach.
-    # The recorded .pid is the wrapper PID; negating it targets its process group.
-    # If that fails (e.g. the command is not a group leader) we fall back to the
-    # single PID. Always use the correctly-parsed flag, never a literal `$***`.
-    # SECURITY: C-c must NEVER fall through to the FIFO / write-chars path below —
-    # that would write raw text (or an empty line) into the agent's pane, exactly
-    # what we must avoid. If we cannot deliver SIGINT, we exit non-zero so the
-    # caller knows the interrupt was not sent.
+    # Handle C-c: send SIGINT to the pane's process tree so that child processes
+    # spawned by the agent (sub-shells, build tools, or a setsid'd foreground) are
+    # interrupted too — not just the wrapper. pane_signal_tree() reads the true
+    # group IDs from /proc and rejects invalid PIDs. SECURITY: C-c must NEVER fall
+    # through to the FIFO / write-chars path below — that would inject raw text (or
+    # an empty line) into the agent pane. If nothing live could be signalled we
+    # exit non-zero.
     if [ "$sk_C_c" = true ]; then
-        PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
-        sent=false
-        if [ -f "$PID_FILE" ]; then
-            pid=$(cat "$PID_FILE" 2>/dev/null)
-            # --- PID safety: reject zero / negative / non-numeric / absurd values ---
-            # A pid of 0 would make `kill -INT -- -0` signal OUR OWN process group.
-            if [[ "$pid" =~ ^[0-9]+$ ]] && [ "$pid" -gt 0 ] && [ "$pid" -lt 4194304 ]; then
-                if kill -0 "$pid" 2>/dev/null; then
-                    # The recorded .pid is the wrapper PID, which is NOT necessarily the
-                    # foreground process group ID of the pane's command. Read the real
-                    # PGID from /proc (stat field 5) so we interrupt the actual group
-                    # that owns the agent's foreground child (and its sub-processes).
-                    pgid=$(awk '{print $5}' "/proc/${pid}/stat" 2>/dev/null)
-                    if [[ "$pgid" =~ ^[0-9]+$ ]] && [ "$pgid" -gt 0 ]; then
-                        if kill -INT -- -"$pgid" 2>/dev/null; then
-                            sent=true
-                            log_debug "send-keys: sent SIGINT to PGID ${pgid} (from pid ${pid})"
-                        fi
-                    fi
-                    # Fallback: the pid itself (covers the case where pid == pgid)
-                    if [ "$sent" = false ] && kill -INT "$pid" 2>/dev/null; then
-                        sent=true
-                        log_debug "send-keys: sent SIGINT to PID ${pid} (single-PID fallback)"
-                    fi
-                fi
+        pid_file="${STATE_DIR}/${PANE_KEY}.pid"
+        if [ -f "$pid_file" ]; then
+            pid=$(cat "$pid_file" 2>/dev/null)
+            if pane_signal_tree "$pid" INT; then
+                exit 0
             else
-                log_debug "send-keys: C-c ignored — invalid pid '${pid}' in ${PID_FILE}"
+                log_debug "send-keys: C-c requested but no live/interruptible PID found; refusing to fall through"
+                exit 1
             fi
-        fi
-        if [ "$sent" = true ]; then
-            exit 0
         else
-            log_debug "send-keys: C-c requested but no live/interrutible PID found; refusing to fall through"
+            log_debug "send-keys: C-c requested but no pid file for ${sk_target}"
             exit 1
         fi
     fi
@@ -650,16 +666,14 @@ kill-pane)
     validate_pane_key "$PANE_KEY" || { log_debug "kill-pane: invalid pane key"; exit 1; }
     log_debug "kill-pane: killing ${kp_target}"
 
-    # Read PID and send SIGTERM to the process group, falling back to single PID.
-    # The wrapper's eval'd command (e.g. claude) is a child process — killing just
-    # the wrapper could orphan it, so we try the process group first.
-    PID_FILE="${STATE_DIR}/${PANE_KEY}.pid"
-    if [ -f "$PID_FILE" ]; then
-        pid=$(cat "$PID_FILE")
-        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-            kill -TERM -- -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-            log_debug "kill-pane: sent SIGTERM to PID ${pid} (process group attempted)"
-        fi
+    # Terminate the pane's process tree. The wrapper's eval'd command (e.g. claude)
+    # is a child process; killing just the wrapper could orphan it. pane_signal_tree()
+    # also reaches a foreground child that spawned its own group via setsid, falling
+    # back to the single PID when nothing group-based worked.
+    pid_file="${STATE_DIR}/${PANE_KEY}.pid"
+    if [ -f "$pid_file" ]; then
+        pid=$(cat "$pid_file" 2>/dev/null)
+        pane_signal_tree "$pid" TERM || log_debug "kill-pane: no live PID to terminate for ${kp_target}"
     fi
 
     # Clean up state files
@@ -841,6 +855,7 @@ capture-pane)
     cp_print=false
     cp_full=false
     cp_reject=false
+    cp_arg=""
     while [ $# -gt 0 ]; do
         case "$1" in
             -t) cp_target="${2:-}"; shift 2 || shift ;;
