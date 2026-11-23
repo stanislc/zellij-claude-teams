@@ -91,14 +91,22 @@ offer_rc_removal() {
     [ -n "$rc" ] && rc_has_block "$rc" || return 1
     ask_yes "Remove activation from ${rc}?" || return 1
     tmp=$(mktemp) || return 1
-    if awk -v b="$RC_BEGIN" -v e="$RC_END" '$0==b{skip=1;next} $0==e&&skip{skip=0;next} !skip' "$rc" > "$tmp" &&
-        cat "$tmp" > "$rc"; then
+    # Drop the first complete block plus the blank line install put before it.
+    # Without a matching end marker awk fails and the file is left untouched.
+    if awk -v b="$RC_BEGIN" -v e="$RC_END" '
+        inblk { if ($0 == e) { inblk = 0; found = 1; hold = 0 }; next }
+        $0 == b && !found { inblk = 1; next }
+        hold { print ""; hold = 0 }
+        $0 == "" { hold = 1; next }
+        { print }
+        END { if (hold) print ""; exit (found ? 0 : 3) }
+    ' "$rc" > "$tmp" && cat "$tmp" > "$rc"; then
         rm -f "$tmp"
         echo "Removed activation from ${rc}."
         return 0
     fi
     rm -f "$tmp"
-    echo "install.sh: could not update ${rc}" >&2
+    echo "install.sh: left ${rc} unchanged (end marker missing or write failed)" >&2
     return 1
 }
 

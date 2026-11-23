@@ -477,8 +477,18 @@ class CoreCompatibilityTests(unittest.TestCase):
         self.assertEqual((sourced.returncode, sourced.stdout.strip()), (0, "1"), sourced.stderr)
         removed = self.run_installer(home, "--uninstall", answer="Y")
         self.assertEqual(removed.returncode, 0, removed.stderr)
-        self.assertNotIn("zellij-tmux-shim", rc.read_text())
-        self.assertIn("export KEEP=1", rc.read_text())
+        self.assertEqual(rc.read_text(), "export KEEP=1\n")
+
+    def test_installer_removal_keeps_rc_without_end_marker(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        broken = "a=1\n\n# >>> zellij-tmux-shim >>>\nsnippet\nexport AFTER=1\n"
+        rc.write_text(broken)
+        removed = self.run_installer(home, "--uninstall", answer="y")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertIn("left", removed.stderr)
+        self.assertEqual(rc.read_text(), broken)
 
     def test_installer_leaves_rc_alone_without_yes(self):
         home = self.shim.root / "home"
@@ -515,6 +525,7 @@ CASE_METHODS = {
     "zsh-user-aliases": "test_sourcing_ignores_user_aliases_in_zsh",
     "installer-rc-edit": "test_installer_rc_edit_asks_and_round_trips",
     "installer-rc-declined": "test_installer_leaves_rc_alone_without_yes",
+    "installer-rc-broken-marker": "test_installer_removal_keeps_rc_without_end_marker",
 }
 
 
