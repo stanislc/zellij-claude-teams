@@ -479,6 +479,22 @@ class CoreCompatibilityTests(unittest.TestCase):
         self.assertEqual(removed.returncode, 0, removed.stderr)
         self.assertEqual(rc.read_text(), "export KEEP=1\n")
 
+    def test_installer_detects_hand_added_snippet(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        manual = (
+            'if [[ -n "$ZELLIJ" ]]; then\n'
+            '    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"\n'
+            '    [[ -f "$_shim" ]] && source "$_shim"\n'
+            "fi\n"
+        )
+        rc.write_text(manual)
+        result = self.run_installer(home, answer="n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("already in", result.stdout)
+        self.assertEqual(rc.read_text(), manual)
+
     def test_installer_removal_keeps_rc_without_end_marker(self):
         home = self.shim.root / "home"
         home.mkdir()
@@ -554,6 +570,7 @@ CASE_METHODS = {
     "zsh-user-aliases": "test_sourcing_ignores_user_aliases_in_zsh",
     "installer-rc-edit": "test_installer_rc_edit_asks_and_round_trips",
     "installer-rc-declined": "test_installer_leaves_rc_alone_without_yes",
+    "installer-rc-manual": "test_installer_detects_hand_added_snippet",
     "installer-rc-broken-marker": "test_installer_removal_keeps_rc_without_end_marker",
     "installer-claude-settings": "test_installer_claude_settings_adds_only_missing_keys",
 }

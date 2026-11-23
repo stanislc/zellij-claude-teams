@@ -73,7 +73,8 @@ offer_rc_edit() {
     local rc
     rc=$(shell_rc)
     [ -n "$rc" ] || return 1
-    if rc_has_block "$rc"; then
+    # Also matches a snippet the user pasted by hand (no markers).
+    if rc_has_block "$rc" || { [ -f "$rc" ] && grep -qF "zellij-tmux-shim/activate.sh" "$rc"; }; then
         echo "Activation is already in ${rc}."
         return 0
     fi
