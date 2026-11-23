@@ -6,7 +6,7 @@ Use semantic project versions: patch releases for compatible fixes, minor releas
 
 For each release:
 
-1. Complete the selected fixes/features and their relevant checks. Record the actual commit, platforms, shell versions, live checks, and limitations in `docs/verification/repository-stabilization.md`.
+1. Complete the selected fixes/features and make sure CI passes on the release commit.
 2. Update `VERSION` and `CHANGELOG.md` in a scoped commit. Keep compatibility fixes and fish integration separately reviewable.
 3. Tag that immutable commit as `vX.Y.Z`. Do not move a release tag to hide a later change; increment the version instead.
 4. Build the source archive with `git archive` from the tag, using a `zellij-claude-teams-X.Y.Z/` prefix. Compute a SHA-256 checksum and verify the archive's version and runtime file contents against that commit.
