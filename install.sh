@@ -2,7 +2,7 @@
 # install.sh — Install the zellij-tmux-shim
 #
 # This script copies the shim files to the XDG-compliant install directory
-# and prints shell activation snippets.
+# and offers to add shell activation to ~/.zshrc or ~/.bashrc (asks first).
 #
 # Usage:
 #   bash install.sh          # Install from the repo directory
@@ -26,6 +26,143 @@ Options:
 
 The shim installs to ${XDG_DATA_HOME:-~/.local/share}/zellij-tmux-shim/
 EOF
+}
+
+RC_BEGIN="# >>> zellij-tmux-shim >>>"
+RC_END="# <<< zellij-tmux-shim <<<"
+
+# POSIX syntax, so the same snippet works in Bash and zsh.
+rc_snippet() {
+    cat <<'SNIPPET'
+# Zellij-tmux-shim (Claude Code agent teams in zellij)
+if [ -n "${ZELLIJ:-}" ]; then
+    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
+    [ -f "$_shim" ] && . "$_shim"
+    unset _shim
+fi
+SNIPPET
+}
+
+# Startup file of the user's login shell; empty when unsupported (e.g. fish).
+shell_rc() {
+    [ -n "${HOME:-}" ] || return 0
+    case "${SHELL##*/}" in
+        zsh) printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc" ;;
+        bash) printf '%s\n' "$HOME/.bashrc" ;;
+    esac
+}
+
+# Ask on a terminal only; anything but y/yes (including no terminal) is no.
+ask_yes() {
+    local reply
+    [ -t 0 ] || return 1
+    printf '%s [y/N] ' "$1"
+    read -r reply || return 1
+    case "$reply" in
+        [yY]|[yY][eE][sS]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+rc_has_block() {
+    [ -f "$1" ] && grep -qxF "$RC_BEGIN" "$1"
+}
+
+# Returns 0 when the snippet is (now) in the rc file, 1 when the user should add it.
+offer_rc_edit() {
+    local rc
+    rc=$(shell_rc)
+    [ -n "$rc" ] || return 1
+    # Also matches a snippet the user pasted by hand (no markers).
+    if rc_has_block "$rc" || { [ -f "$rc" ] && grep -qF "zellij-tmux-shim/activate.sh" "$rc"; }; then
+        echo "Activation is already in ${rc}."
+        return 0
+    fi
+    ask_yes "Add activation to ${rc}?" || return 1
+    if ! { printf '\n%s\n' "$RC_BEGIN"; rc_snippet; printf '%s\n' "$RC_END"; } >> "$rc"; then
+        echo "install.sh: could not write ${rc}" >&2
+        return 1
+    fi
+    echo "Added activation to ${rc}. Restart your shell inside zellij."
+}
+
+# Remove only our marked block; write back in place so symlinked dotfiles survive.
+offer_rc_removal() {
+    local rc tmp
+    rc=$(shell_rc)
+    [ -n "$rc" ] && rc_has_block "$rc" || return 1
+    ask_yes "Remove activation from ${rc}?" || return 1
+    tmp=$(mktemp) || return 1
+    # Drop the first complete block plus the blank line install put before it.
+    # Without a matching end marker awk fails and the file is left untouched.
+    if awk -v b="$RC_BEGIN" -v e="$RC_END" '
+        inblk { if ($0 == e) { inblk = 0; found = 1; hold = 0 }; next }
+        $0 == b && !found { inblk = 1; next }
+        hold { print ""; hold = 0 }
+        $0 == "" { hold = 1; next }
+        { print }
+        END { if (hold) print ""; exit (found ? 0 : 3) }
+    ' "$rc" > "$tmp" && cat "$tmp" > "$rc"; then
+        rm -f "$tmp"
+        echo "Removed activation from ${rc}."
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "install.sh: left ${rc} unchanged (end marker missing or write failed)" >&2
+    return 1
+}
+
+
+# Empty when neither CLAUDE_CONFIG_DIR nor HOME is set.
+claude_settings_path() {
+    if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+        printf '%s\n' "$CLAUDE_CONFIG_DIR/settings.json"
+    elif [ -n "${HOME:-}" ]; then
+        printf '%s\n' "$HOME/.claude/settings.json"
+    fi
+}
+
+print_claude_settings() {
+    local CLAUDE_SETTINGS
+    CLAUDE_SETTINGS=$(claude_settings_path)
+    [ -n "$CLAUDE_SETTINGS" ] || CLAUDE_SETTINGS="~/.claude/settings.json"
+    echo "To start agent teams with plain 'claude', add to ${CLAUDE_SETTINGS}:"
+    echo '  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }, "teammateMode": "auto" }'
+}
+
+# Add only the missing keys; never overwrite a value the user set.
+offer_claude_settings() {
+    local current tmp CLAUDE_SETTINGS
+    CLAUDE_SETTINGS=$(claude_settings_path)
+    [ -n "$CLAUDE_SETTINGS" ] || return 1
+    command -v jq >/dev/null 2>&1 || return 1
+    if [ -e "$CLAUDE_SETTINGS" ]; then
+        current=$(cat "$CLAUDE_SETTINGS") || return 1
+        [ -n "$current" ] || current='{}'
+        if ! printf '%s' "$current" | jq -e 'type == "object" and ((.env // {}) | type == "object")' >/dev/null 2>&1; then
+            echo "install.sh: ${CLAUDE_SETTINGS} is not a JSON object; left it unchanged" >&2
+            return 1
+        fi
+    else
+        current='{}'
+    fi
+    if printf '%s' "$current" | jq -e '.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS != null and .teammateMode != null' >/dev/null; then
+        echo "Agent teams are already configured in ${CLAUDE_SETTINGS}."
+        return 0
+    fi
+    ask_yes "Enable agent teams in ${CLAUDE_SETTINGS} (adds CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 and teammateMode \"auto\" where missing)?" || return 1
+    tmp=$(mktemp) || return 1
+    if printf '%s' "$current" |
+        jq '.env = ((.env // {}) | .CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS //= "1") | .teammateMode //= "auto"' > "$tmp" &&
+        mkdir -p "${CLAUDE_SETTINGS%/*}" &&
+        (umask 077; cat "$tmp" > "$CLAUDE_SETTINGS"); then
+        rm -f "$tmp"
+        echo "Updated ${CLAUDE_SETTINGS}. Inside zellij, plain 'claude' now starts with agent teams."
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "install.sh: could not update ${CLAUDE_SETTINGS}" >&2
+    return 1
 }
 
 do_install() {
@@ -52,29 +189,15 @@ do_install() {
         return 0
     fi
     echo ""
-    echo "Add ONE of the following snippets to your shell config:"
+    if ! offer_rc_edit; then
+        echo "Add this snippet to your ~/.bashrc, ~/.bash_profile or ~/.zshrc:"
+        echo ""
+        rc_snippet
+        echo ""
+        echo "Then restart your shell inside zellij."
+    fi
     echo ""
-    echo "=== For ~/.bashrc or ~/.bash_profile ==="
-    cat <<'BASH_SNIPPET'
-# --- Zellij-tmux-shim (Claude Code agent teams in zellij) ---
-if [ -n "$ZELLIJ" ]; then
-    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
-    [ -f "$_shim" ] && . "$_shim"
-    unset _shim
-fi
-BASH_SNIPPET
-    echo ""
-    echo "=== For ~/.zshrc ==="
-    cat <<'ZSH_SNIPPET'
-# --- Zellij-tmux-shim (Claude Code agent teams in zellij) ---
-if [[ -n "$ZELLIJ" ]]; then
-    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
-    [[ -f "$_shim" ]] && source "$_shim"
-    unset _shim
-fi
-ZSH_SNIPPET
-    echo ""
-    echo "Then restart your shell inside zellij."
+    offer_claude_settings || print_claude_settings
 }
 
 do_uninstall() {
@@ -92,7 +215,7 @@ do_uninstall() {
         return 0
     fi
     echo ""
-    echo "Remember to remove the activation snippet from your shell config."
+    offer_rc_removal || echo "Remember to remove the activation snippet from your shell config."
 }
 
 ACTION=install

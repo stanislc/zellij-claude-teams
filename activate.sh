@@ -2,6 +2,15 @@
 # Source this file to activate the zellij-tmux-shim.
 # Usage: source activate.sh
 
+# Parse the helpers below without user aliases (e.g. find=fd, rm='rm -i').
+if [ -n "${ZSH_VERSION-}" ]; then
+    if [[ -o aliases ]]; then __zct_aliases=1; else __zct_aliases=0; fi
+    setopt no_aliases
+elif [ -n "${BASH_VERSION-}" ]; then
+    if shopt -q expand_aliases; then __zct_aliases=1; else __zct_aliases=0; fi
+    shopt -u expand_aliases
+fi
+
 __zellij_tmux_shim_prepend_path() {
     local _zct_bin="$1"
     local _zct_rest="${PATH-}"
@@ -156,6 +165,11 @@ __zellij_tmux_shim_activate() {
     export TMUX_PANE=%0
     export ZELLIJ_TMUX_SHIM_ACTIVE=1
 }
+
+if [ "${__zct_aliases-}" = 1 ]; then
+    if [ -n "${ZSH_VERSION-}" ]; then setopt aliases; else shopt -s expand_aliases; fi
+fi
+unset __zct_aliases
 
 if __zellij_tmux_shim_activate; then
     unset -f __zellij_tmux_shim_activate __zellij_tmux_shim_prepend_path

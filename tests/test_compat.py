@@ -17,6 +17,7 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 TMUX = REPO / "bin" / "tmux"
 DEACTIVATE = REPO / "deactivate.sh"
+INSTALL = REPO / "install.sh"
 FAKE_ZELLIJ = REPO / "tests" / "helpers" / "fake_zellij.py"
 
 
@@ -413,6 +414,139 @@ class CoreCompatibilityTests(unittest.TestCase):
             0,
         )
 
+    def test_sourcing_ignores_user_aliases_in_zsh(self):
+        # zsh expands aliases while parsing a sourced function (e.g. find=fd).
+        original_path = "/usr/bin:/bin"
+        env = self.shim.env.copy()
+        env.update(
+            {
+                "PATH": f"{REPO / 'bin'}:{original_path}",
+                "ZELLIJ_TMUX_SHIM_ACTIVE": "1",
+                "ZELLIJ_TMUX_SHIM_ORIG_PATH": original_path,
+            }
+        )
+        script = (
+            "alias find=zct-missing-fd rm=zct-missing-rm; "
+            f"source {shlex.quote(str(DEACTIVATE))}; "
+            "printf '%s|%s' \"$?\" \"$(alias find)\""
+        )
+        result = subprocess.run(
+            ["/bin/zsh", "-f", "-c", script], env=env, capture_output=True, text=True
+        )
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (0, "0|find=zct-missing-fd", ""),
+        )
+        self.assertFalse(self.shim.state.exists())
+
+    def run_installer(self, home, *args, answer=None):
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(home),
+            "SHELL": "/bin/zsh",
+            "XDG_DATA_HOME": str(home / "data"),
+        }
+        cmd = [self.shim.bash, str(INSTALL), *args]
+        if answer is None:
+            return subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        master, slave = os.openpty()
+        try:
+            os.write(master, "".join(line + "\n" for line in answer.split("|")).encode())
+            return subprocess.run(cmd, env=env, stdin=slave, capture_output=True, text=True)
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_installer_rc_edit_asks_and_round_trips(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        rc.write_text("export KEEP=1\n")
+        added = self.run_installer(home, answer="yes|n")
+        self.assertEqual(added.returncode, 0, added.stderr)
+        self.assertIn("[y/N]", added.stdout)
+        self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
+        again = self.run_installer(home, answer="y|n")
+        self.assertIn("already in", again.stdout)
+        self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
+        sourced = subprocess.run(
+            ["/bin/zsh", "-f", "-c", f"ZELLIJ=0; source {shlex.quote(str(rc))}; echo $KEEP"],
+            env={"PATH": "/usr/bin:/bin", "HOME": str(home), "XDG_DATA_HOME": str(home / "data")},
+            capture_output=True, text=True,
+        )
+        self.assertEqual((sourced.returncode, sourced.stdout.strip()), (0, "1"), sourced.stderr)
+        removed = self.run_installer(home, "--uninstall", answer="Y")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertEqual(rc.read_text(), "export KEEP=1\n")
+
+    def test_installer_detects_hand_added_snippet(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        manual = (
+            'if [[ -n "$ZELLIJ" ]]; then\n'
+            '    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"\n'
+            '    [[ -f "$_shim" ]] && source "$_shim"\n'
+            "fi\n"
+        )
+        rc.write_text(manual)
+        result = self.run_installer(home, answer="n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("already in", result.stdout)
+        self.assertEqual(rc.read_text(), manual)
+
+    def test_installer_removal_keeps_rc_without_end_marker(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        broken = "a=1\n\n# >>> zellij-tmux-shim >>>\nsnippet\nexport AFTER=1\n"
+        rc.write_text(broken)
+        removed = self.run_installer(home, "--uninstall", answer="y")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertIn("left", removed.stderr)
+        self.assertEqual(rc.read_text(), broken)
+
+    def test_installer_leaves_rc_alone_without_yes(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        rc.write_text("export KEEP=1\n")
+        for answer in ("|", "n|n", "yess|no", None):
+            result = self.run_installer(home, answer=answer)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Add this snippet", result.stdout)
+            self.assertEqual(rc.read_text(), "export KEEP=1\n", answer)
+        self.assertNotIn("[y/N]", result.stdout)
+
+    def test_installer_claude_settings_adds_only_missing_keys(self):
+        home = self.shim.root / "home"
+        claude = home / ".claude"
+        claude.mkdir(parents=True)
+        settings = claude / "settings.json"
+        settings.write_text('{"model": "x", "teammateMode": "tmux", "env": {"FOO": "1"}}')
+        result = self.run_installer(home, answer="n|y")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(settings.read_text()),
+            {"model": "x", "teammateMode": "tmux",
+             "env": {"FOO": "1", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}},
+        )
+        again = self.run_installer(home, answer="n")
+        self.assertIn("already configured", again.stdout)
+        settings.write_text("{not json")
+        broken = self.run_installer(home, answer="n|y")
+        self.assertEqual(settings.read_text(), "{not json")
+        self.assertIn("not a JSON object", broken.stderr)
+        settings.unlink()
+        fresh = self.run_installer(home, answer="n|y")
+        self.assertEqual(fresh.returncode, 0, fresh.stderr)
+        self.assertEqual(
+            json.loads(settings.read_text()),
+            {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}, "teammateMode": "auto"},
+        )
+        declined = self.run_installer(home, answer="n|n")
+        self.assertEqual(declined.returncode, 0, declined.stderr)
+
 
 CASE_METHODS = {
     "baseline-cli": "test_baseline_cli",
@@ -433,6 +567,12 @@ CASE_METHODS = {
     "invalid-pid": "test_noncanonical_pids_have_no_pane_effects",
     "zsh-empty": "test_deactivate_empty_state_in_actual_zsh",
     "zsh-populated": "test_deactivate_populated_state_kills_owned_pid_and_restores_environment",
+    "zsh-user-aliases": "test_sourcing_ignores_user_aliases_in_zsh",
+    "installer-rc-edit": "test_installer_rc_edit_asks_and_round_trips",
+    "installer-rc-declined": "test_installer_leaves_rc_alone_without_yes",
+    "installer-rc-manual": "test_installer_detects_hand_added_snippet",
+    "installer-rc-broken-marker": "test_installer_removal_keeps_rc_without_end_marker",
+    "installer-claude-settings": "test_installer_claude_settings_adds_only_missing_keys",
 }
 
 

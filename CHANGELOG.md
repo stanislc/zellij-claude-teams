@@ -2,6 +2,12 @@
 
 Project versions are independent of the tmux version reported by the compatibility shim.
 
+## 0.2.1 — installer setup and alias fix
+
+- Ignore user shell aliases (e.g. `alias find=fd`) when sourcing `activate.sh`/`deactivate.sh` in zsh and Bash; the caller's alias setting is restored afterwards.
+- `install.sh` asks (`[y/N]`, default no) before adding activation to `~/.zshrc` or `~/.bashrc`, and `--uninstall` asks before removing that marked block.
+- `install.sh` offers (`[y/N]`) to add `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` and `teammateMode: "auto"` to Claude's `settings.json` where missing, so plain `claude` starts agent teams.
+
 ## 0.2.0 — fish support
 
 - Add native fish activation/deactivation, the optional `claude-zellij` child-shell launcher, and an installer that maintains the fish autoloaded function.

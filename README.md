@@ -37,13 +37,15 @@ cd zellij-claude-teams
 bash install.sh          # fish: fish install.fish
 ```
 
-The install script copies files to `${XDG_DATA_HOME:-~/.local/share}/zellij-tmux-shim/` and prints the activation snippet for your shell.
+The install script copies files to `${XDG_DATA_HOME:-~/.local/share}/zellij-tmux-shim/`. If your login shell is zsh or Bash, it asks `Add activation to ~/.zshrc? [y/N]` (or `~/.bashrc`). Answer `y` and it appends a block between `# >>> zellij-tmux-shim >>>` markers. Any other answer, `--quiet`, or a non-interactive run leaves your config untouched and prints the snippet instead. `bash install.sh --uninstall` offers to remove that block the same way.
 
-Fish users can run `fish install.fish` to install the runtime and the optional `claude-zellij` launcher together. Neither installer edits your shell configuration.
+It then offers to enable agent teams in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) so plain `claude` works inside Zellij. It adds `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"` and `teammateMode = "auto"` only where they are missing, keeps every other setting, and leaves a file that is not valid JSON untouched. This step needs `jq`; without it the installer prints the JSON to add. Uninstall does not remove these settings, since you may have set them yourself.
+
+Fish users can run `fish install.fish` to install the runtime and the optional `claude-zellij` launcher together. It does not edit `config.fish`.
 
 ### Shell activation
 
-Add **one** of these to your shell config:
+If you declined the installer's prompt, add **one** of these to your shell config:
 
 **Bash** (`~/.bashrc`):
 ```bash
@@ -136,7 +138,7 @@ The runtime uses its installed copy, so pulling alone does not update it. The fi
 ```bash
 cd zellij-claude-teams
 bash install.sh --uninstall
-# Then remove the activation snippet from your shell config
+# Answer y to remove the installer's block, or remove your snippet by hand
 ```
 
 If you used the fish installer, run `fish install.fish --uninstall` to remove the runtime and its `claude-zellij.fish` function. Other fish functions are preserved. Remove a startup snippet only if you added one.
