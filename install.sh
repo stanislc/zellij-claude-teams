@@ -45,6 +45,7 @@ SNIPPET
 
 # Startup file of the user's login shell; empty when unsupported (e.g. fish).
 shell_rc() {
+    [ -n "${HOME:-}" ] || return 0
     case "${SHELL##*/}" in
         zsh) printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc" ;;
         bash) printf '%s\n' "$HOME/.bashrc" ;;
@@ -110,16 +111,29 @@ offer_rc_removal() {
     return 1
 }
 
-CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+
+# Empty when neither CLAUDE_CONFIG_DIR nor HOME is set.
+claude_settings_path() {
+    if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+        printf '%s\n' "$CLAUDE_CONFIG_DIR/settings.json"
+    elif [ -n "${HOME:-}" ]; then
+        printf '%s\n' "$HOME/.claude/settings.json"
+    fi
+}
 
 print_claude_settings() {
+    local CLAUDE_SETTINGS
+    CLAUDE_SETTINGS=$(claude_settings_path)
+    [ -n "$CLAUDE_SETTINGS" ] || CLAUDE_SETTINGS="~/.claude/settings.json"
     echo "To start agent teams with plain 'claude', add to ${CLAUDE_SETTINGS}:"
     echo '  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }, "teammateMode": "auto" }'
 }
 
 # Add only the missing keys; never overwrite a value the user set.
 offer_claude_settings() {
-    local current tmp
+    local current tmp CLAUDE_SETTINGS
+    CLAUDE_SETTINGS=$(claude_settings_path)
+    [ -n "$CLAUDE_SETTINGS" ] || return 1
     command -v jq >/dev/null 2>&1 || return 1
     if [ -e "$CLAUDE_SETTINGS" ]; then
         current=$(cat "$CLAUDE_SETTINGS") || return 1
