@@ -27,7 +27,7 @@ Agent panes are named after their role and stack vertically on the right.
 - **Zellij** 0.40+ (tested on 0.45.1). Focus-independent pane placement (multi-tab safe) needs 0.44.1+; older versions still work but place panes next to the focused pane.
 - **Bash** 3.2+ for the shared runtime, including when your interactive shell is zsh or fish
 - **Fish** is optional; the fish adapter is tested with 3.7.0 on Linux and 4.9.2/4.9.3 on macOS
-- **Claude Code** with Agent Teams support (contributors report tests with 2.1.260 and 2.1.268; this release's checks use controlled stand-ins, not an authenticated conversation; see [Claude Code notes](#claude-code-notes))
+- **Claude Code** with Agent Teams support (tested with 2.1.323; see [Claude Code notes](#claude-code-notes))
 
 ## Installation
 
@@ -234,7 +234,8 @@ cat "${ZELLIJ_TMUX_SHIM_STATE}/shim.log"
 - **No pane resizing** — Zellij manages layout automatically; tmux layout commands are no-ops
 - **Fragile to Claude Code updates** — new tmux commands added upstream may need shim updates. Debug logging captures unhandled commands for diagnosis.
 - **No real respawn** — `respawn-pane` is only supported for a pane still waiting for its first command (which is how Claude Code uses it). Respawning a pane that is already running a command returns an error instead of pretending to succeed.
-- **Retained state limitations** — pane records use PIDs without process-birth identity. Older Zellij late-input fallback moves focus and can race a user changing it. See the [verification ledger](docs/verification/repository-stabilization.md) for scope and deferred work.
+- **Retained state limitations** — pane records use PIDs without process-birth identity. Older Zellij late-input fallback moves focus and can race a user changing it.
+- **Stopped teammates can leave commands running** — when Claude stops a teammate mid-command (e.g. a long `sleep`), Claude Code exits without killing that command; kill it separately.
 
 ## Compatibility
 
@@ -254,7 +255,7 @@ The shim avoids GNU-specific extensions:
 
 ## Versions and development
 
-The project release number is stored in `VERSION`, copied into the installation, and printed by `bash install.sh --version`. `tmux -V` reports a separate compatibility identity for Claude's tmux checks. See [the changelog](CHANGELOG.md), [release procedure](docs/RELEASING.md), and [verification ledger](docs/verification/repository-stabilization.md).
+The project release number is stored in `VERSION`, copied into the installation, and printed by `bash install.sh --version`. `tmux -V` reports a separate compatibility identity for Claude's tmux checks. See [the changelog](CHANGELOG.md) and [release procedure](docs/RELEASING.md).
 
 Deactivate existing teams before updating the installed scripts. Running wrappers and their FIFOs are not upgraded in place.
 
