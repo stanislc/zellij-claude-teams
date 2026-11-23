@@ -2,6 +2,15 @@
 # Source this file to deactivate the zellij-tmux-shim.
 # Usage: source deactivate.sh
 
+# Parse the helpers below without user aliases (e.g. find=fd, rm='rm -i').
+if [ -n "${ZSH_VERSION-}" ]; then
+    if [[ -o aliases ]]; then __zct_aliases=1; else __zct_aliases=0; fi
+    setopt no_aliases
+elif [ -n "${BASH_VERSION-}" ]; then
+    if shopt -q expand_aliases; then __zct_aliases=1; else __zct_aliases=0; fi
+    shopt -u expand_aliases
+fi
+
 __zellij_tmux_shim_deactivate() {
     local _zct_runtime_base _zct_root _zct_state _zct_tail _zct_owner _zct_uid
     _zct_runtime_base=${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}
@@ -73,6 +82,11 @@ __zellij_tmux_shim_deactivate() {
     unset ZELLIJ_TMUX_SHIM_SAVED_TMUX_PANE_PRESENT ZELLIJ_TMUX_SHIM_SAVED_TMUX_PANE_VALUE
     unset ZELLIJ_TMUX_SHIM_DEBUG
 }
+
+if [ "${__zct_aliases-}" = 1 ]; then
+    if [ -n "${ZSH_VERSION-}" ]; then setopt aliases; else shopt -s expand_aliases; fi
+fi
+unset __zct_aliases
 
 if __zellij_tmux_shim_deactivate; then
     unset -f __zellij_tmux_shim_deactivate

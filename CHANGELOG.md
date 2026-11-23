@@ -2,6 +2,10 @@
 
 Project versions are independent of the tmux version reported by the compatibility shim.
 
+## Unreleased
+
+- Ignore user shell aliases (e.g. `alias find=fd`) when sourcing `activate.sh`/`deactivate.sh` in zsh and Bash; the caller's alias setting is restored afterwards.
+
 ## 0.2.0 — fish support
 
 - Add native fish activation/deactivation, the optional `claude-zellij` child-shell launcher, and an installer that maintains the fish autoloaded function.

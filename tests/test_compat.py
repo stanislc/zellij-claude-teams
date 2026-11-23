@@ -413,6 +413,31 @@ class CoreCompatibilityTests(unittest.TestCase):
             0,
         )
 
+    def test_sourcing_ignores_user_aliases_in_zsh(self):
+        # zsh expands aliases while parsing a sourced function (e.g. find=fd).
+        original_path = "/usr/bin:/bin"
+        env = self.shim.env.copy()
+        env.update(
+            {
+                "PATH": f"{REPO / 'bin'}:{original_path}",
+                "ZELLIJ_TMUX_SHIM_ACTIVE": "1",
+                "ZELLIJ_TMUX_SHIM_ORIG_PATH": original_path,
+            }
+        )
+        script = (
+            "alias find=zct-missing-fd rm=zct-missing-rm; "
+            f"source {shlex.quote(str(DEACTIVATE))}; "
+            "printf '%s|%s' \"$?\" \"$(alias find)\""
+        )
+        result = subprocess.run(
+            ["/bin/zsh", "-f", "-c", script], env=env, capture_output=True, text=True
+        )
+        self.assertEqual(
+            (result.returncode, result.stdout, result.stderr),
+            (0, "0|find=zct-missing-fd", ""),
+        )
+        self.assertFalse(self.shim.state.exists())
+
 
 CASE_METHODS = {
     "baseline-cli": "test_baseline_cli",
@@ -433,6 +458,7 @@ CASE_METHODS = {
     "invalid-pid": "test_noncanonical_pids_have_no_pane_effects",
     "zsh-empty": "test_deactivate_empty_state_in_actual_zsh",
     "zsh-populated": "test_deactivate_populated_state_kills_owned_pid_and_restores_environment",
+    "zsh-user-aliases": "test_sourcing_ignores_user_aliases_in_zsh",
 }
 
 
