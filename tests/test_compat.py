@@ -451,7 +451,7 @@ class CoreCompatibilityTests(unittest.TestCase):
             return subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
         master, slave = os.openpty()
         try:
-            os.write(master, (answer + "\n").encode())
+            os.write(master, "".join(line + "\n" for line in answer.split("|")).encode())
             return subprocess.run(cmd, env=env, stdin=slave, capture_output=True, text=True)
         finally:
             os.close(master)
@@ -462,11 +462,11 @@ class CoreCompatibilityTests(unittest.TestCase):
         home.mkdir()
         rc = home / ".zshrc"
         rc.write_text("export KEEP=1\n")
-        added = self.run_installer(home, answer="yes")
+        added = self.run_installer(home, answer="yes|n")
         self.assertEqual(added.returncode, 0, added.stderr)
         self.assertIn("[y/N]", added.stdout)
         self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
-        again = self.run_installer(home, answer="y")
+        again = self.run_installer(home, answer="y|n")
         self.assertIn("already in", again.stdout)
         self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
         sourced = subprocess.run(
@@ -495,12 +495,41 @@ class CoreCompatibilityTests(unittest.TestCase):
         home.mkdir()
         rc = home / ".zshrc"
         rc.write_text("export KEEP=1\n")
-        for answer in ("", "n", "yess", None):
+        for answer in ("|", "n|n", "yess|no", None):
             result = self.run_installer(home, answer=answer)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("Add this snippet", result.stdout)
             self.assertEqual(rc.read_text(), "export KEEP=1\n", answer)
         self.assertNotIn("[y/N]", result.stdout)
+
+    def test_installer_claude_settings_adds_only_missing_keys(self):
+        home = self.shim.root / "home"
+        claude = home / ".claude"
+        claude.mkdir(parents=True)
+        settings = claude / "settings.json"
+        settings.write_text('{"model": "x", "teammateMode": "tmux", "env": {"FOO": "1"}}')
+        result = self.run_installer(home, answer="n|y")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(settings.read_text()),
+            {"model": "x", "teammateMode": "tmux",
+             "env": {"FOO": "1", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}},
+        )
+        again = self.run_installer(home, answer="n")
+        self.assertIn("already configured", again.stdout)
+        settings.write_text("{not json")
+        broken = self.run_installer(home, answer="n|y")
+        self.assertEqual(settings.read_text(), "{not json")
+        self.assertIn("not a JSON object", broken.stderr)
+        settings.unlink()
+        fresh = self.run_installer(home, answer="n|y")
+        self.assertEqual(fresh.returncode, 0, fresh.stderr)
+        self.assertEqual(
+            json.loads(settings.read_text()),
+            {"env": {"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"}, "teammateMode": "auto"},
+        )
+        declined = self.run_installer(home, answer="n|n")
+        self.assertEqual(declined.returncode, 0, declined.stderr)
 
 
 CASE_METHODS = {
@@ -526,6 +555,7 @@ CASE_METHODS = {
     "installer-rc-edit": "test_installer_rc_edit_asks_and_round_trips",
     "installer-rc-declined": "test_installer_leaves_rc_alone_without_yes",
     "installer-rc-broken-marker": "test_installer_removal_keeps_rc_without_end_marker",
+    "installer-claude-settings": "test_installer_claude_settings_adds_only_missing_keys",
 }
 
 

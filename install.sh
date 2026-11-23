@@ -110,6 +110,46 @@ offer_rc_removal() {
     return 1
 }
 
+CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
+
+print_claude_settings() {
+    echo "To start agent teams with plain 'claude', add to ${CLAUDE_SETTINGS}:"
+    echo '  { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" }, "teammateMode": "auto" }'
+}
+
+# Add only the missing keys; never overwrite a value the user set.
+offer_claude_settings() {
+    local current tmp
+    command -v jq >/dev/null 2>&1 || return 1
+    if [ -e "$CLAUDE_SETTINGS" ]; then
+        current=$(cat "$CLAUDE_SETTINGS") || return 1
+        [ -n "$current" ] || current='{}'
+        if ! printf '%s' "$current" | jq -e 'type == "object" and ((.env // {}) | type == "object")' >/dev/null 2>&1; then
+            echo "install.sh: ${CLAUDE_SETTINGS} is not a JSON object; left it unchanged" >&2
+            return 1
+        fi
+    else
+        current='{}'
+    fi
+    if printf '%s' "$current" | jq -e '.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS != null and .teammateMode != null' >/dev/null; then
+        echo "Agent teams are already configured in ${CLAUDE_SETTINGS}."
+        return 0
+    fi
+    ask_yes "Enable agent teams in ${CLAUDE_SETTINGS} (adds CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 and teammateMode \"auto\" where missing)?" || return 1
+    tmp=$(mktemp) || return 1
+    if printf '%s' "$current" |
+        jq '.env = ((.env // {}) | .CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS //= "1") | .teammateMode //= "auto"' > "$tmp" &&
+        mkdir -p "${CLAUDE_SETTINGS%/*}" &&
+        (umask 077; cat "$tmp" > "$CLAUDE_SETTINGS"); then
+        rm -f "$tmp"
+        echo "Updated ${CLAUDE_SETTINGS}. Inside zellij, plain 'claude' now starts with agent teams."
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "install.sh: could not update ${CLAUDE_SETTINGS}" >&2
+    return 1
+}
+
 do_install() {
     echo "Installing zellij-tmux-shim to ${INSTALL_DIR}..."
 
@@ -134,14 +174,15 @@ do_install() {
         return 0
     fi
     echo ""
-    if offer_rc_edit; then
-        return 0
+    if ! offer_rc_edit; then
+        echo "Add this snippet to your ~/.bashrc, ~/.bash_profile or ~/.zshrc:"
+        echo ""
+        rc_snippet
+        echo ""
+        echo "Then restart your shell inside zellij."
     fi
-    echo "Add this snippet to your ~/.bashrc, ~/.bash_profile or ~/.zshrc:"
     echo ""
-    rc_snippet
-    echo ""
-    echo "Then restart your shell inside zellij."
+    offer_claude_settings || print_claude_settings
 }
 
 do_uninstall() {
