@@ -5,6 +5,7 @@ Project versions are independent of the tmux version reported by the compatibili
 ## Unreleased
 
 - Ignore user shell aliases (e.g. `alias find=fd`) when sourcing `activate.sh`/`deactivate.sh` in zsh and Bash; the caller's alias setting is restored afterwards.
+- `install.sh` asks (`[y/N]`, default no) before adding activation to `~/.zshrc` or `~/.bashrc`, and `--uninstall` asks before removing that marked block.
 
 ## 0.2.0 — fish support
 

@@ -2,7 +2,7 @@
 # install.sh — Install the zellij-tmux-shim
 #
 # This script copies the shim files to the XDG-compliant install directory
-# and prints shell activation snippets.
+# and offers to add shell activation to ~/.zshrc or ~/.bashrc (asks first).
 #
 # Usage:
 #   bash install.sh          # Install from the repo directory
@@ -26,6 +26,80 @@ Options:
 
 The shim installs to ${XDG_DATA_HOME:-~/.local/share}/zellij-tmux-shim/
 EOF
+}
+
+RC_BEGIN="# >>> zellij-tmux-shim >>>"
+RC_END="# <<< zellij-tmux-shim <<<"
+
+# POSIX syntax, so the same snippet works in Bash and zsh.
+rc_snippet() {
+    cat <<'SNIPPET'
+# Zellij-tmux-shim (Claude Code agent teams in zellij)
+if [ -n "${ZELLIJ:-}" ]; then
+    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
+    [ -f "$_shim" ] && . "$_shim"
+    unset _shim
+fi
+SNIPPET
+}
+
+# Startup file of the user's login shell; empty when unsupported (e.g. fish).
+shell_rc() {
+    case "${SHELL##*/}" in
+        zsh) printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc" ;;
+        bash) printf '%s\n' "$HOME/.bashrc" ;;
+    esac
+}
+
+# Ask on a terminal only; anything but y/yes (including no terminal) is no.
+ask_yes() {
+    local reply
+    [ -t 0 ] || return 1
+    printf '%s [y/N] ' "$1"
+    read -r reply || return 1
+    case "$reply" in
+        [yY]|[yY][eE][sS]) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+rc_has_block() {
+    [ -f "$1" ] && grep -qxF "$RC_BEGIN" "$1"
+}
+
+# Returns 0 when the snippet is (now) in the rc file, 1 when the user should add it.
+offer_rc_edit() {
+    local rc
+    rc=$(shell_rc)
+    [ -n "$rc" ] || return 1
+    if rc_has_block "$rc"; then
+        echo "Activation is already in ${rc}."
+        return 0
+    fi
+    ask_yes "Add activation to ${rc}?" || return 1
+    if ! { printf '\n%s\n' "$RC_BEGIN"; rc_snippet; printf '%s\n' "$RC_END"; } >> "$rc"; then
+        echo "install.sh: could not write ${rc}" >&2
+        return 1
+    fi
+    echo "Added activation to ${rc}. Restart your shell inside zellij."
+}
+
+# Remove only our marked block; write back in place so symlinked dotfiles survive.
+offer_rc_removal() {
+    local rc tmp
+    rc=$(shell_rc)
+    [ -n "$rc" ] && rc_has_block "$rc" || return 1
+    ask_yes "Remove activation from ${rc}?" || return 1
+    tmp=$(mktemp) || return 1
+    if awk -v b="$RC_BEGIN" -v e="$RC_END" '$0==b{skip=1;next} $0==e&&skip{skip=0;next} !skip' "$rc" > "$tmp" &&
+        cat "$tmp" > "$rc"; then
+        rm -f "$tmp"
+        echo "Removed activation from ${rc}."
+        return 0
+    fi
+    rm -f "$tmp"
+    echo "install.sh: could not update ${rc}" >&2
+    return 1
 }
 
 do_install() {
@@ -52,27 +126,12 @@ do_install() {
         return 0
     fi
     echo ""
-    echo "Add ONE of the following snippets to your shell config:"
+    if offer_rc_edit; then
+        return 0
+    fi
+    echo "Add this snippet to your ~/.bashrc, ~/.bash_profile or ~/.zshrc:"
     echo ""
-    echo "=== For ~/.bashrc or ~/.bash_profile ==="
-    cat <<'BASH_SNIPPET'
-# --- Zellij-tmux-shim (Claude Code agent teams in zellij) ---
-if [ -n "$ZELLIJ" ]; then
-    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
-    [ -f "$_shim" ] && . "$_shim"
-    unset _shim
-fi
-BASH_SNIPPET
-    echo ""
-    echo "=== For ~/.zshrc ==="
-    cat <<'ZSH_SNIPPET'
-# --- Zellij-tmux-shim (Claude Code agent teams in zellij) ---
-if [[ -n "$ZELLIJ" ]]; then
-    _shim="${XDG_DATA_HOME:-$HOME/.local/share}/zellij-tmux-shim/activate.sh"
-    [[ -f "$_shim" ]] && source "$_shim"
-    unset _shim
-fi
-ZSH_SNIPPET
+    rc_snippet
     echo ""
     echo "Then restart your shell inside zellij."
 }
@@ -92,7 +151,7 @@ do_uninstall() {
         return 0
     fi
     echo ""
-    echo "Remember to remove the activation snippet from your shell config."
+    offer_rc_removal || echo "Remember to remove the activation snippet from your shell config."
 }
 
 ACTION=install

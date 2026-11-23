@@ -17,6 +17,7 @@ import unittest
 REPO = Path(__file__).resolve().parents[1]
 TMUX = REPO / "bin" / "tmux"
 DEACTIVATE = REPO / "deactivate.sh"
+INSTALL = REPO / "install.sh"
 FAKE_ZELLIJ = REPO / "tests" / "helpers" / "fake_zellij.py"
 
 
@@ -438,6 +439,59 @@ class CoreCompatibilityTests(unittest.TestCase):
         )
         self.assertFalse(self.shim.state.exists())
 
+    def run_installer(self, home, *args, answer=None):
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(home),
+            "SHELL": "/bin/zsh",
+            "XDG_DATA_HOME": str(home / "data"),
+        }
+        cmd = [self.shim.bash, str(INSTALL), *args]
+        if answer is None:
+            return subprocess.run(cmd, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        master, slave = os.openpty()
+        try:
+            os.write(master, (answer + "\n").encode())
+            return subprocess.run(cmd, env=env, stdin=slave, capture_output=True, text=True)
+        finally:
+            os.close(master)
+            os.close(slave)
+
+    def test_installer_rc_edit_asks_and_round_trips(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        rc.write_text("export KEEP=1\n")
+        added = self.run_installer(home, answer="yes")
+        self.assertEqual(added.returncode, 0, added.stderr)
+        self.assertIn("[y/N]", added.stdout)
+        self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
+        again = self.run_installer(home, answer="y")
+        self.assertIn("already in", again.stdout)
+        self.assertEqual(rc.read_text().count("# >>> zellij-tmux-shim >>>"), 1)
+        sourced = subprocess.run(
+            ["/bin/zsh", "-f", "-c", f"ZELLIJ=0; source {shlex.quote(str(rc))}; echo $KEEP"],
+            env={"PATH": "/usr/bin:/bin", "HOME": str(home), "XDG_DATA_HOME": str(home / "data")},
+            capture_output=True, text=True,
+        )
+        self.assertEqual((sourced.returncode, sourced.stdout.strip()), (0, "1"), sourced.stderr)
+        removed = self.run_installer(home, "--uninstall", answer="Y")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertNotIn("zellij-tmux-shim", rc.read_text())
+        self.assertIn("export KEEP=1", rc.read_text())
+
+    def test_installer_leaves_rc_alone_without_yes(self):
+        home = self.shim.root / "home"
+        home.mkdir()
+        rc = home / ".zshrc"
+        rc.write_text("export KEEP=1\n")
+        for answer in ("", "n", "yess", None):
+            result = self.run_installer(home, answer=answer)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Add this snippet", result.stdout)
+            self.assertEqual(rc.read_text(), "export KEEP=1\n", answer)
+        self.assertNotIn("[y/N]", result.stdout)
+
 
 CASE_METHODS = {
     "baseline-cli": "test_baseline_cli",
@@ -459,6 +513,8 @@ CASE_METHODS = {
     "zsh-empty": "test_deactivate_empty_state_in_actual_zsh",
     "zsh-populated": "test_deactivate_populated_state_kills_owned_pid_and_restores_environment",
     "zsh-user-aliases": "test_sourcing_ignores_user_aliases_in_zsh",
+    "installer-rc-edit": "test_installer_rc_edit_asks_and_round_trips",
+    "installer-rc-declined": "test_installer_leaves_rc_alone_without_yes",
 }
 
 
