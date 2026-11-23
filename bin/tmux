@@ -199,6 +199,62 @@ zellij_supports_targeted_panes() {
     [ "$_ZELLIJ_TARGETED" = yes ]
 }
 
+# Can this zellij write directly to a pane by id? Probe this independently
+# from pane creation/rename: write-chars gained --pane-id on its own schedule,
+# and late send-keys must use it whenever it is available.
+zellij_supports_targeted_write() {
+    if [ -z "${_ZELLIJ_TARGETED_WRITE:-}" ]; then
+        local write_help
+        if write_help=$(zellij action write-chars --help 2>/dev/null); then
+            case "$write_help" in
+                *--pane-id*) _ZELLIJ_TARGETED_WRITE=yes ;;
+                *) _ZELLIJ_TARGETED_WRITE=no ;;
+            esac
+        else
+            _ZELLIJ_TARGETED_WRITE=no
+        fi
+    fi
+    [ "$_ZELLIJ_TARGETED_WRITE" = yes ]
+}
+
+# Load the recorded zellij terminal pane id only when the corresponding
+# wrapper process is still alive. Current state records contain bare numeric
+# terminal ids; reject unknown, prefixed, and plugin ids before touching focus.
+load_live_zellij_target() {
+    local pane_key="$1"
+    local id_file="${STATE_DIR}/${pane_key}.zellij_id"
+    local pid_file="${STATE_DIR}/${pane_key}.pid"
+    local recorded_id recorded_pid
+
+    LIVE_ZELLIJ_ID=""
+    [ -f "$id_file" ] && [ -f "$pid_file" ] || {
+        log_debug "send-keys: missing target state for %${pane_key}"
+        return 1
+    }
+
+    recorded_id=$(cat "$id_file" 2>/dev/null) || return 1
+    case "$recorded_id" in
+        ''|*[!0-9]*)
+            log_debug "send-keys: invalid recorded zellij id '${recorded_id}' for %${pane_key}"
+            return 1
+            ;;
+    esac
+
+    recorded_pid=$(cat "$pid_file" 2>/dev/null) || return 1
+    case "$recorded_pid" in
+        ''|0*|*[!0-9]*)
+            log_debug "send-keys: invalid recorded PID '${recorded_pid}' for %${pane_key}"
+            return 1
+            ;;
+    esac
+    if ! kill -0 "$recorded_pid" 2>/dev/null; then
+        log_debug "send-keys: stale target %${pane_key} (PID ${recorded_pid} is not live)"
+        return 1
+    fi
+
+    LIVE_ZELLIJ_ID="$recorded_id"
+}
+
 # Create a zellij pane running the wrapper for synthetic pane $1 in direction
 # $2, placed relative to zellij pane id $3 (defaults to the caller's pane),
 # optionally named $4. Echoes zellij's pane id (e.g. 12) when available.
@@ -495,13 +551,39 @@ send-keys)
         wait_for_named "$PANE_KEY"
     else
         # FIFO doesn't exist — the wrapper has already exec'd into a process.
-        # Fall back to zellij write-chars (best effort, focus-dependent).
-        ZELLIJ_ID_FILE="${STATE_DIR}/${PANE_KEY}.zellij_id"
-        if [ -f "$ZELLIJ_ID_FILE" ]; then
-            log_debug "send-keys: FIFO gone, falling back to write-chars"
-            zellij action write-chars "${COMMAND_TEXT}"$'\n' 2>/dev/null || true
+        # Route late text only to a validated, live recorded terminal pane.
+        if ! load_live_zellij_target "$PANE_KEY"; then
+            echo "zellij-tmux-shim: send-keys: target ${sk_target} is not a live pane" >&2
+            exit 1
+        fi
+
+        if zellij_supports_targeted_write; then
+            log_debug "send-keys: FIFO gone, writing directly to zellij pane ${LIVE_ZELLIJ_ID}"
+            if zellij action write-chars --pane-id "$LIVE_ZELLIJ_ID" "${COMMAND_TEXT}"$'\n' 2>/dev/null; then
+                exit 0
+            else
+                sk_status=$?
+                log_debug "send-keys: targeted write-chars failed with status ${sk_status}"
+                exit "$sk_status"
+            fi
         else
-            log_debug "send-keys: no FIFO and no zellij_id for ${sk_target}"
+            # Older zellij releases require focus before write-chars. Do not
+            # write unless focus reached the validated target.
+            log_debug "send-keys: targeted write unavailable, focusing zellij pane ${LIVE_ZELLIJ_ID}"
+            if zellij action focus-pane-id "$LIVE_ZELLIJ_ID" 2>/dev/null; then
+                :
+            else
+                sk_status=$?
+                log_debug "send-keys: focus-pane-id failed with status ${sk_status}"
+                exit "$sk_status"
+            fi
+            if zellij action write-chars "${COMMAND_TEXT}"$'\n' 2>/dev/null; then
+                exit 0
+            else
+                sk_status=$?
+                log_debug "send-keys: legacy write-chars failed with status ${sk_status}"
+                exit "$sk_status"
+            fi
         fi
     fi
     exit 0
